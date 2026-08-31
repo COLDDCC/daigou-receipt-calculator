@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>代购费用核算 · 小票生成</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#241C26;
+    --panel:#2E2532;
+    --field:#3A2F3E;
+    --line:#4C3F51;
+    --text:#F3EEE8;
+    --muted:#A398A6;
+    --accent:#E0532C;
+    --paper:#FFFEFB;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:"Noto Sans SC",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:15px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:1080px;margin:0 auto;padding:36px 20px 72px;
+    display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:44px;align-items:start;
+  }
+  header{grid-column:1/-1;margin-bottom:4px}
+  h1{font-size:22px;font-weight:700;margin:0 0 6px;letter-spacing:.02em}
+  header p{margin:0;color:var(--muted);font-size:13.5px;max-width:52ch}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px}
+  .panel + .panel{margin-top:18px}
+  .panel h2{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 16px}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  .f{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .f label{font-size:12.5px;color:var(--muted)}
+  input,select,textarea{
+    font-family:inherit;font-size:15px;color:var(--text);
+    background:var(--field);border:1px solid var(--line);border-radius:6px;
+    padding:9px 11px;width:100%;
+  }
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+  textarea{resize:vertical;min-height:60px;font-size:14px}
+  .hint{font-size:11.5px;color:var(--muted);margin-top:-2px}
+
+  .rows{display:flex;flex-direction:column;gap:10px}
+  .row{display:grid;grid-template-columns:minmax(0,1fr) 108px 62px 32px;gap:8px;align-items:end}
+  .row .rm{
+    background:transparent;border:1px solid var(--line);color:var(--muted);
+    border-radius:6px;height:38px;cursor:pointer;font-size:16px;padding:0;
+  }
+  .row .rm:hover{color:var(--accent);border-color:var(--accent)}
+  .row-head{display:grid;grid-template-columns:minmax(0,1fr) 108px 62px 32px;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:2px}
+
+  .btn{
+    font-family:inherit;font-size:14px;font-weight:500;cursor:pointer;
+    border-radius:6px;padding:10px 16px;border:1px solid var(--line);
+    background:transparent;color:var(--text);
+  }
+  .btn:hover{border-color:var(--accent)}
+  .btn-solid{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn-solid:hover{filter:brightness(1.08)}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+
+  .preview{position:sticky;top:28px}
+  .preview canvas{width:100%;height:auto;display:block;border-radius:10px}
+  .note{color:var(--muted);font-size:12.5px;margin-top:12px;min-height:1.6em}
+
+  @media (max-width:920px){
+    .wrap{grid-template-columns:1fr;gap:28px}
+    .preview{position:static}
+    .row,.row-head{grid-template-columns:minmax(0,1fr) 92px 54px 32px}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>代购费用核算</h1>
+    <p>填完自动出小票，下载图片发给客户，付款和到货后按单号核对。</p>
+  </header>
+
+  <div>
+    <div class="panel">
+      <h2>商品明细</h2>
+      <div class="row-head"><span>品名</span><span>日元单价</span><span>数量</span><span></span></div>
+      <div class="rows" id="rows"></div>
+      <div class="actions">
+        <button class="btn" id="addRow">再加一行</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>费用设置</h2>
+      <div class="grid3">
+        <div class="f">
+          <label for="discount">折扣（几折）</label>
+          <input id="discount" type="number" step="0.1" min="0" max="10" value="10">
+          <span class="hint">10 = 不打折</span>
+        </div>
+        <div class="f">
+          <label for="rate">汇率</label>
+          <input id="rate" type="number" step="0.01" min="0.01" value="20">
+          <span class="hint">1 元 = ? 日元</span>
+        </div>
+        <div class="f">
+          <label for="round">尾数</label>
+          <select id="round">
+            <option value="none">保留分</option>
+            <option value="jiao">进位到角</option>
+            <option value="yuan">进位到元</option>
+          </select>
+          <span class="hint">抹零方式</span>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:14px">
+        <div class="f">
+          <label for="fee">通讯费总额</label>
+          <input id="fee" type="number" step="0.01" min="0" value="0">
+          <span class="hint">按件数平摊到每件</span>
+        </div>
+        <div class="f">
+          <label for="feeCur">通讯费币种</label>
+          <select id="feeCur">
+            <option value="JPY">日元</option>
+            <option value="CNY">人民币</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>单据信息</h2>
+      <div class="grid3">
+        <div class="f"><label for="cust">客户</label><input id="cust" type="text" placeholder="昵称"></div>
+        <div class="f"><label for="date">日期</label><input id="date" type="date"></div>
+        <div class="f"><label for="no">单号</label><input id="no" type="text"></div>
+      </div>
+      <div class="f" style="margin-top:14px">
+        <label for="memo">备注</label>
+        <textarea id="memo" placeholder="例：等齐后一起发，运费到付"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="preview">
+    <canvas id="cv"></canvas>
+    <div class="actions">
+      <button class="btn btn-solid" id="dl">下载小票</button>
+      <button class="btn" id="cp">复制图片</button>
+    </div>
+    <p class="note" id="note"></p>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const rowsEl = $('rows'), cv = $('cv'), ctx = cv.getContext('2d');
+  const noteEl = $('note');
+
+  const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans SC", "PingFang SC", monospace';
+
+  /* ---------- 表单 ---------- */
+  function addRow(name='', price='', qty=1){
+    const d = document.createElement('div');
+    d.className = 'row';
+    d.innerHTML =
+      '<div class="f"><input type="text" class="i-name" placeholder="商品名"></div>' +
+      '<div class="f"><input type="number" class="i-price" min="0" step="1" placeholder="0"></div>' +
+      '<div class="f"><input type="number" class="i-qty" min="1" step="1" value="1"></div>' +
+      '<button class="rm" title="删除这行">×</button>';
+    d.querySelector('.i-name').value = name;
+    d.querySelector('.i-price').value = price;
+    d.querySelector('.i-qty').value = qty;
+    d.querySelector('.rm').addEventListener('click', () => {
+      if (rowsEl.children.length > 1) { d.remove(); render(); }
+    });
+    rowsEl.appendChild(d);
+  }
+
+  function readItems(){
+    return [...rowsEl.children].map(r => ({
+      name: r.querySelector('.i-name').value.trim(),
+      price: +r.querySelector('.i-price').value || 0,
+      qty: Math.max(1, Math.round(+r.querySelector('.i-qty').value || 1))
+    })).filter(i => i.price > 0 || i.name);
+  }
+
+  /* ---------- 计算 ---------- */
+  const fmtJ = n => '¥' + Math.round(n).toLocaleString('en-US');
+  const fmtC = n => n.toFixed(2) + ' 元';
+
+  function roundUp(n, mode){
+    if (mode === 'jiao') return Math.ceil(n * 10) / 10;
+    if (mode === 'yuan') return Math.ceil(n);
+    return Math.round(n * 100) / 100;
+  }
+
+  function compute(){
+    const items = readItems();
+    const zhe = Math.min(10, Math.max(0, +$('discount').value || 10));
+    const k = zhe / 10;
+    const ex = Math.max(0.01, +$('rate').value || 20);
+    const feeTotal = Math.max(0, +$('fee').value || 0);
+    const feeCur = $('feeCur').value;
+    const mode = $('round').value;
+
+    const qty = items.reduce((s,i) => s + i.qty, 0);
+    const grossJ = items.reduce((s,i) => s + i.price * i.qty, 0);
+    const netJ = grossJ * k;
+    const feeCNY = feeCur === 'CNY' ? feeTotal : feeTotal / ex;
+    const perUnitCNY = qty ? feeCNY / qty : 0;
+    const perUnitRaw = qty ? feeTotal / qty : 0;
+
+    const lines = items.map(i => {
+      const nj = i.price * i.qty * k;
+      return { ...i, netJ: nj, cny: nj / ex + perUnitCNY * i.qty };
+    });
+
+    const rawTotal = netJ / ex + feeCNY;
+    const total = roundUp(rawTotal, mode);
+
+    return { items: lines, zhe, k, ex, feeTotal, feeCur, feeCNY, perUnitCNY, perUnitRaw,
+             qty, grossJ, netJ, rawTotal, total, mode };
+  }
+
+  /* ---------- 小票绘制 ---------- */
+  const W = 520, PAD = 40, PW = W - PAD*2, TOP = 26, TOOTH = 11, TH = 7;
+
+  function buildLines(d){
+    const L = [];
+    L.push({t:'title', v:'骏河屋代购 · 费用清单'});
+    L.push({t:'sub', v:'SURUGA-YA ORDER'});
+    L.push({t:'gap', h:10});
+    L.push({t:'rule'});
+    const cust = $('cust').value.trim();
+    if (cust) L.push({t:'kv', a:'客户', b:cust});
+    L.push({t:'kv', a:'日期', b:$('date').value || ''});
+    const no = $('no').value.trim();
+    if (no) L.push({t:'kv', a:'单号', b:no});
+    L.push({t:'rule'});
+
+    if (!d.items.length){
+      L.push({t:'gap', h:6});
+      L.push({t:'center', v:'还没有商品'});
+      L.push({t:'gap', h:6});
+    } else {
+      d.items.forEach((it, n) => {
+        L.push({t:'item', n:n+1, it, d});
+      });
+    }
+    L.push({t:'rule'});
+    L.push({t:'kv', a:'商品原价', b:fmtJ(d.grossJ)});
+    if (d.zhe < 10){
+      L.push({t:'kv', a:'折扣  ' + d.zhe + ' 折', b:'-' + fmtJ(d.grossJ - d.netJ)});
+      L.push({t:'kv', a:'折后金额', b:fmtJ(d.netJ)});
+    }
+    L.push({t:'kv', a:'汇率  1 元 = ' + d.ex + ' 日元', b:fmtC(d.netJ / d.ex)});
+    if (d.feeTotal > 0){
+      const per = d.feeCur === 'CNY' ? fmtC(d.perUnitRaw) : fmtJ(d.perUnitRaw);
+      L.push({t:'kv', a:'通讯费平摊  ' + d.qty + ' 件 × ' + per, b:fmtC(d.feeCNY)});
+    }
+    L.push({t:'rule'});
+    L.push({t:'total', a:'应付合计', b:fmtC(d.total)});
+    if (Math.abs(d.total - d.rawTotal) > 0.004){
+      L.push({t:'kvs', a:'（原 ' + d.rawTotal.toFixed(2) + ' 元，' + (d.mode==='yuan'?'进位到元':'进位到角') + '）', b:''});
+    }
+    L.push({t:'rule'});
+    const memo = $('memo').value.trim();
+    if (memo) memo.split('\n').forEach(m => L.push({t:'text', v:m}));
+    L.push({t:'gap', h:4});
+    L.push({t:'center', v:'共 ' + d.qty + ' 件 · 请核对后付款'});
+    return L;
+  }
+
+  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, total:38, text:20, center:22};
+
+  function drawReceipt(scale){
+    const d = compute();
+    const L = buildLines(d);
+    let body = 0;
+    L.forEach(l => body += (l.t === 'gap' ? l.h : H[l.t]));
+    const paperH = 34 + body + 34;
+    const H_ = TOP + paperH + TOP;
+
+    cv.width = W * scale;
+    cv.height = H_ * scale;
+    cv.style.aspectRatio = W + '/' + H_;
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
+    // 背景
+    ctx.fillStyle = '#241C26';
+    ctx.fillRect(0, 0, W, H_);
+
+    // 纸张（上下锯齿）
+    const x0 = PAD, x1 = W - PAD, y0 = TOP, y1 = TOP + paperH;
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    for (let x = x0; x < x1; x += TOOTH){
+      ctx.lineTo(Math.min(x + TOOTH/2, x1), y0 - TH);
+      ctx.lineTo(Math.min(x + TOOTH, x1), y0);
+    }
+    ctx.lineTo(x1, y1);
+    for (let x = x1; x > x0; x -= TOOTH){
+      ctx.lineTo(Math.max(x - TOOTH/2, x0), y1 + TH);
+      ctx.lineTo(Math.max(x - TOOTH, x0), y1);
+    }
+    ctx.closePath();
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,.45)';
+    ctx.shadowBlur = 18;
+    ctx.shadowOffsetY = 6;
+    ctx.fillStyle = '#FFFEFB';
+    ctx.fill();
+    ctx.restore();
+
+    // 内容
+    const IL = x0 + 22, IR = x1 - 22, IW = IR - IL;
+    let y = y0 + 34;
+    const ink = '#1A1714', fade = '#8C857C', acc = '#D2461F';
+
+    const right = (txt, yy) => { ctx.textAlign = 'right'; ctx.fillText(txt, IR, yy); ctx.textAlign = 'left'; };
+    const clip = (txt, max) => {
+      if (ctx.measureText(txt).width <= max) return txt;
+      let s = txt;
+      while (s.length > 1 && ctx.measureText(s + '…').width > max) s = s.slice(0, -1);
+      return s + '…';
+    };
+    const dash = yy => {
+      ctx.strokeStyle = '#D8D2C8'; ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(IL, yy + .5); ctx.lineTo(IR, yy + .5); ctx.stroke();
+      ctx.setLineDash([]);
+    };
+
+    ctx.textBaseline = 'alphabetic';
+
+    L.forEach(l => {
+      if (l.t === 'gap'){ y += l.h; return; }
+      if (l.t === 'title'){
+        ctx.fillStyle = ink; ctx.font = '700 19px ' + MONO;
+        ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 20); ctx.textAlign = 'left';
+      } else if (l.t === 'sub'){
+        ctx.fillStyle = fade; ctx.font = '400 10px ' + MONO;
+        ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 12); ctx.textAlign = 'left';
+      } else if (l.t === 'rule'){
+        dash(y + 8);
+      } else if (l.t === 'kv'){
+        ctx.font = '400 13px ' + MONO; ctx.fillStyle = fade;
+        ctx.fillText(l.a, IL, y + 15);
+        ctx.fillStyle = ink; right(l.b, y + 15);
+      } else if (l.t === 'kvs'){
+        ctx.font = '400 11px ' + MONO; ctx.fillStyle = fade;
+        ctx.textAlign = 'right'; ctx.fillText(l.a, IR, y + 13); ctx.textAlign = 'left';
+      } else if (l.t === 'item'){
+        const it = l.it, dd = l.d;
+        ctx.font = '500 13.5px ' + MONO; ctx.fillStyle = ink;
+        ctx.fillText(clip(l.n + '. ' + (it.name || '未命名'), IW - 4), IL, y + 15);
+        ctx.font = '400 12px ' + MONO; ctx.fillStyle = fade;
+        let sub = '   ' + fmtJ(it.price) + ' × ' + it.qty;
+        if (dd.zhe < 10) sub += '  折后 ' + fmtJ(it.netJ);
+        ctx.fillText(sub, IL, y + 33);
+        ctx.font = '500 13px ' + MONO; ctx.fillStyle = ink;
+        right(fmtC(it.cny), y + 33);
+      } else if (l.t === 'total'){
+        ctx.font = '700 15px ' + MONO; ctx.fillStyle = ink;
+        ctx.fillText(l.a, IL, y + 22);
+        ctx.font = '700 21px ' + MONO; ctx.fillStyle = acc;
+        right(l.b, y + 23);
+      } else if (l.t === 'text'){
+        ctx.font = '400 12px ' + MONO; ctx.fillStyle = fade;
+        ctx.fillText(clip(l.v, IW), IL, y + 14);
+      } else if (l.t === 'center'){
+        ctx.font = '400 11.5px ' + MONO; ctx.fillStyle = fade;
+        ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 14); ctx.textAlign = 'left';
+      }
+      y += H[l.t];
+    });
+
+    return d;
+  }
+
+  function render(){
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    drawReceipt(Math.max(2, dpr));
+    save();
+  }
+
+  /* ---------- 导出 ---------- */
+  function filename(){
+    const c = $('cust').value.trim() || '代购';
+    const n = $('no').value.trim();
+    return [c, n, $('date').value].filter(Boolean).join('-') + '.png';
+  }
+
+  $('dl').addEventListener('click', () => {
+    drawReceipt(3);
+    const a = document.createElement('a');
+    a.download = filename();
+    a.href = cv.toDataURL('image/png');
+    a.click();
+    render();
+    noteEl.textContent = '已下载。';
+  });
+
+  $('cp').addEventListener('click', async () => {
+    drawReceipt(3);
+    try{
+      const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+      await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+      noteEl.textContent = '已复制，可以直接粘贴到微信。';
+    }catch(e){
+      noteEl.textContent = '这个浏览器不支持复制图片，用「下载小票」吧。';
+    }
+    render();
+  });
+
+  /* ---------- 记住设置 ---------- */
+  const KEY = 'daigou:settings';
+  async function save(){
+    try{
+      if (!window.storage) return;
+      await window.storage.set(KEY, JSON.stringify({
+        rate: $('rate').value, discount: $('discount').value,
+        fee: $('fee').value, feeCur: $('feeCur').value, round: $('round').value
+      }));
+    }catch(e){}
+  }
+  async function load(){
+    try{
+      if (!window.storage) return;
+      const r = await window.storage.get(KEY);
+      if (!r) return;
+      const s = JSON.parse(r.value);
+      ['rate','discount','fee','feeCur','round'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+    }catch(e){}
+  }
+
+  /* ---------- 启动 ---------- */
+  $('addRow').addEventListener('click', () => { addRow(); render(); });
+  document.addEventListener('input', render);
+  document.addEventListener('change', render);
+  window.addEventListener('resize', () => drawReceipt(Math.max(2, window.devicePixelRatio || 1)));
+
+  const t = new Date();
+  $('date').value = t.toISOString().slice(0,10);
+  $('no').value = 'SY' + String(t.getMonth()+1).padStart(2,'0') + String(t.getDate()).padStart(2,'0')
+                  + '-' + String(Math.floor(Math.random()*900+100));
+
+  addRow('', '', 1);
+  load().then(render);
+})();
+</script>
+</body>
+</html>
