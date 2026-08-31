@@ -99,6 +99,9 @@
     .preview{position:static}
     .row,.row-head{grid-template-columns:minmax(0,1fr) 92px 54px 32px}
   }
+  @media (max-width:480px){
+    .grid3{grid-template-columns:1fr}
+  }
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -567,22 +570,20 @@
 
   /* ---------- 记住设置 ---------- */
   const KEY = 'daigou:settings';
-  async function save(){
+  function save(){
     try{
-      if (!window.storage) return;
-      await window.storage.set(KEY, JSON.stringify({
+      localStorage.setItem(KEY, JSON.stringify({
         rate: $('rate').value, discount: $('discount').value,
         fee: $('fee').value, ship: $('ship').value,
         feeCur: segValue('feeCurSeg'), round: segValue('roundSeg')
       }));
     }catch(e){}
   }
-  async function load(){
+  function load(){
     try{
-      if (!window.storage) return;
-      const r = await window.storage.get(KEY);
-      if (!r) return;
-      const s = JSON.parse(r.value);
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw);
       ['rate','discount','fee','ship'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
       if (s.feeCur) setSeg('feeCurSeg', s.feeCur);
       if (s.round) setSeg('roundSeg', s.round);
@@ -601,7 +602,8 @@
                   + '-' + String(Math.floor(Math.random()*900+100));
 
   addRow('', '', 1);
-  load().then(render);
+  load();
+  render();
 })();
 </script>
 </body>
