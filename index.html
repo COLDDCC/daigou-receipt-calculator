@@ -137,13 +137,13 @@
       <div class="grid3">
         <div class="f">
           <label for="discount">折扣（几折）</label>
-          <input id="discount" type="number" step="0.1" min="0" max="10" value="10">
+          <input id="discount" type="number" step="0.1" min="0" max="10" value="9">
           <span class="hint">10 = 不打折</span>
         </div>
         <div class="f">
           <label for="rate">汇率</label>
-          <input id="rate" type="number" step="0.01" min="0.01" value="20">
-          <span class="hint">1 元 = ? 日元</span>
+          <input id="rate" type="number" step="0.001" min="0.0001" value="0.046">
+          <span class="hint">1 日元 = ? 元</span>
         </div>
         <div class="f">
           <label>尾数</label>
@@ -158,8 +158,8 @@
       <div class="grid2" style="margin-top:14px">
         <div class="f">
           <label for="fee">通讯费总额</label>
-          <input id="fee" type="number" step="0.01" min="0" value="0">
-          <span class="hint">按件数平摊到每件</span>
+          <input id="fee" type="number" step="0.01" min="0" value="240">
+          <span class="hint">按总点数平摊</span>
         </div>
         <div class="f">
           <label>通讯费币种</label>
@@ -167,6 +167,18 @@
             <button type="button" data-v="JPY" aria-pressed="true">日元</button>
             <button type="button" data-v="CNY" aria-pressed="false">人民币</button>
           </div>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:14px">
+        <div class="f">
+          <label for="ship">运费总额</label>
+          <input id="ship" type="number" step="0.01" min="0" value="0">
+          <span class="hint">日元，按总点数平摊</span>
+        </div>
+        <div class="f">
+          <label for="batchQty">本次总点数</label>
+          <input id="batchQty" type="number" step="1" min="0" placeholder="留空 = 按本人件数">
+          <span class="hint">多人合买一起下单时，填全部人的总点数</span>
         </div>
       </div>
     </div>
@@ -301,28 +313,39 @@
     const items = readItems();
     const zhe = Math.min(10, Math.max(0, +$('discount').value || 10));
     const k = zhe / 10;
-    const ex = Math.max(0.01, +$('rate').value || 20);
+    const rate = Math.max(0.0001, +$('rate').value || 0.046);
     const feeTotal = Math.max(0, +$('fee').value || 0);
     const feeCur = segValue('feeCurSeg') || 'JPY';
+    const shipTotal = Math.max(0, +$('ship').value || 0);
     const mode = segValue('roundSeg') || 'none';
 
-    const qty = items.reduce((s,i) => s + i.qty, 0);
+    const ownQty = items.reduce((s,i) => s + i.qty, 0);
+    const batchQtyInput = +$('batchQty').value || 0;
+    const batchProvided = batchQtyInput > 0;
+    const batchQty = batchProvided ? batchQtyInput : ownQty;
+
     const grossJ = items.reduce((s,i) => s + i.price * i.qty, 0);
     const netJ = grossJ * k;
-    const feeCNY = feeCur === 'CNY' ? feeTotal : feeTotal / ex;
-    const perUnitCNY = qty ? feeCNY / qty : 0;
-    const perUnitRaw = qty ? feeTotal / qty : 0;
+    const feeCNY = feeCur === 'CNY' ? feeTotal : feeTotal * rate;
+    const shipCNY = shipTotal * rate;
+    const perUnitFeeCNY = batchQty ? feeCNY / batchQty : 0;
+    const perUnitFeeRaw = batchQty ? feeTotal / batchQty : 0;
+    const perUnitShipCNY = batchQty ? shipCNY / batchQty : 0;
+    const perUnitShipRaw = batchQty ? shipTotal / batchQty : 0;
 
     const lines = items.map(i => {
       const nj = i.price * i.qty * k;
-      return { ...i, netJ: nj, cny: nj / ex + perUnitCNY * i.qty };
+      return { ...i, netJ: nj, cny: nj * rate + (perUnitFeeCNY + perUnitShipCNY) * i.qty };
     });
 
-    const rawTotal = netJ / ex + feeCNY;
+    const feeShareCNY = perUnitFeeCNY * ownQty;
+    const shipShareCNY = perUnitShipCNY * ownQty;
+    const rawTotal = netJ * rate + feeShareCNY + shipShareCNY;
     const total = roundUp(rawTotal, mode);
 
-    return { items: lines, zhe, k, ex, feeTotal, feeCur, feeCNY, perUnitCNY, perUnitRaw,
-             qty, grossJ, netJ, rawTotal, total, mode };
+    return { items: lines, zhe, k, rate, feeTotal, feeCur, feeCNY, shipTotal, shipCNY,
+             perUnitFeeCNY, perUnitFeeRaw, perUnitShipCNY, perUnitShipRaw, feeShareCNY, shipShareCNY,
+             ownQty, batchQty, batchProvided, grossJ, netJ, rawTotal, total, mode };
   }
 
   /* ---------- 小票绘制 ---------- */
@@ -339,7 +362,8 @@
     L.push({t:'kv', a:'日期', b:$('date').value || ''});
     const no = $('no').value.trim();
     if (no) L.push({t:'kv', a:'单号', b:no});
-    L.push({t:'kv', a:'购买件数', b:d.qty + ' 件'});
+    L.push({t:'kv', a:'购买件数', b:d.ownQty + ' 件'});
+    if (d.batchProvided) L.push({t:'kv', a:'本次总点数', b:d.batchQty + ' 点'});
     L.push({t:'rule'});
 
     if (!d.items.length){
@@ -357,10 +381,13 @@
       L.push({t:'kv', a:'折扣  ' + d.zhe + ' 折', b:'-' + fmtJ(d.grossJ - d.netJ)});
       L.push({t:'kv', a:'折后金额', b:fmtJ(d.netJ)});
     }
-    L.push({t:'kv', a:'汇率  1 元 = ' + d.ex + ' 日元', b:fmtC(d.netJ / d.ex)});
+    L.push({t:'kv', a:'汇率  1 日元 = ' + d.rate + ' 元', b:fmtC(d.netJ * d.rate)});
     if (d.feeTotal > 0){
-      const per = d.feeCur === 'CNY' ? fmtC(d.perUnitRaw) : fmtJ(d.perUnitRaw);
-      L.push({t:'kv', a:'通讯费平摊  ' + d.qty + ' 件 × ' + per, b:fmtC(d.feeCNY)});
+      const per = d.feeCur === 'CNY' ? fmtC(d.perUnitFeeCNY) : fmtJ(d.perUnitFeeRaw);
+      L.push({t:'kv', a:'通讯费平摊  ' + d.ownQty + ' 件 × ' + per, b:fmtC(d.feeShareCNY)});
+    }
+    if (d.shipTotal > 0){
+      L.push({t:'kv', a:'运费平摊  ' + d.ownQty + ' 件 × ' + fmtJ(d.perUnitShipRaw), b:fmtC(d.shipShareCNY)});
     }
     L.push({t:'formula', v:buildFormula(d)});
     L.push({t:'rule'});
@@ -370,7 +397,7 @@
     }
     L.push({t:'rule'});
     L.push({t:'gap', h:4});
-    L.push({t:'center', v:'共 ' + d.qty + ' 件 · 请核对后付款'});
+    L.push({t:'center', v:'共 ' + d.ownQty + ' 件 · 请核对后付款'});
     return L;
   }
 
@@ -378,8 +405,9 @@
     const jpy = n => Math.round(n).toLocaleString('en-US');
     let f = jpy(d.grossJ);
     if (d.zhe < 10) f += ' × ' + d.k.toFixed(2);
-    f += ' ÷ ' + d.ex;
-    if (d.feeCNY > 0) f = '(' + f + ') + ' + d.feeCNY.toFixed(2);
+    f += ' × ' + d.rate;
+    const extra = d.feeShareCNY + d.shipShareCNY;
+    if (extra > 0.0001) f = '(' + f + ') + ' + extra.toFixed(2);
     f += ' = ' + d.total.toFixed(2) + ' 元';
     return f;
   }
@@ -543,7 +571,8 @@
       if (!window.storage) return;
       await window.storage.set(KEY, JSON.stringify({
         rate: $('rate').value, discount: $('discount').value,
-        fee: $('fee').value, feeCur: segValue('feeCurSeg'), round: segValue('roundSeg')
+        fee: $('fee').value, ship: $('ship').value,
+        feeCur: segValue('feeCurSeg'), round: segValue('roundSeg')
       }));
     }catch(e){}
   }
@@ -553,7 +582,7 @@
       const r = await window.storage.get(KEY);
       if (!r) return;
       const s = JSON.parse(r.value);
-      ['rate','discount','fee'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+      ['rate','discount','fee','ship'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
       if (s.feeCur) setSeg('feeCurSeg', s.feeCur);
       if (s.round) setSeg('roundSeg', s.round);
     }catch(e){}
