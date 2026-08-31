@@ -6,74 +6,88 @@
 <title>代购费用核算 · 小票生成</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Anybody:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --ink:#F6F1E9;
-    --panel:#FFFFFF;
-    --field:#F4EEE4;
-    --line:#E4DBCC;
-    --text:#332C24;
-    --muted:#8A7F70;
-    --accent:#D2571F;
-    --paper:#FFFEFB;
+    --field:#E3E8EA;
+    --paper:#FFFFFF;
+    --ink:#12171B;
+    --ink-2:#5A666E;
+    --rule:#4A7FB5;
+    --pad:#5F8A6E;
+    --lead:#C4452F;
+    --line:#C3CDD2;
+    --display:'Anybody','Noto Sans SC',system-ui,sans-serif;
+    --body:'IBM Plex Sans','Noto Sans SC',system-ui,sans-serif;
+    --mono:'IBM Plex Mono','Noto Sans SC',ui-monospace,monospace;
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0}
   body{
-    background:var(--ink);
-    color:var(--text);
-    font-family:"Noto Sans SC",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
-    font-size:15px;
-    line-height:1.6;
+    background:var(--field);
+    color:var(--ink);
+    font:400 15px/1.6 var(--body);
     -webkit-font-smoothing:antialiased;
+    background-image:
+      linear-gradient(to right,rgba(74,127,181,.09) .6px,transparent .6px),
+      linear-gradient(to bottom,rgba(74,127,181,.09) .6px,transparent .6px);
+    background-size:5mm 5mm;
   }
   .wrap{
     max-width:1080px;margin:0 auto;padding:36px 20px 72px;
     display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:44px;align-items:start;
   }
   header{grid-column:1/-1;margin-bottom:4px}
-  h1{font-size:22px;font-weight:700;margin:0 0 6px;letter-spacing:.02em}
-  header p{margin:0;color:var(--muted);font-size:13.5px;max-width:52ch}
+  h1{font:700 24px/1.1 var(--display);letter-spacing:-.01em;margin:0 0 8px}
+  header p{margin:0;color:var(--ink-2);font-size:13.5px;max-width:52ch}
 
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:22px}
+  .panel{background:var(--paper);border:1px solid var(--line);padding:20px}
   .panel + .panel{margin-top:18px}
-  .panel h2{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 16px}
+  .panel h2{font:700 11px/1 var(--mono);letter-spacing:.1em;color:var(--ink);margin:0 0 16px;padding-bottom:12px;border-bottom:1.5px solid var(--ink)}
 
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
   .f{display:flex;flex-direction:column;gap:6px;min-width:0}
-  .f label{font-size:12.5px;color:var(--muted)}
+  .f>label{font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--ink-2)}
   input,select{
-    font-family:inherit;font-size:15px;color:var(--text);
-    background:var(--field);border:1px solid var(--line);border-radius:6px;
+    font-family:var(--body);font-size:15px;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:0;
     padding:9px 11px;width:100%;
   }
-  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
-  .hint{font-size:11.5px;color:var(--muted);margin-top:-2px}
+  input[type=number],#no,.i-price,.i-qty{font-family:var(--mono)}
+  input:focus,select:focus{outline:2px solid var(--rule);outline-offset:1px;border-color:transparent}
+  .hint{font-size:11.5px;color:var(--ink-2);margin-top:-2px}
 
   .rows{display:flex;flex-direction:column;gap:10px}
   .row{display:grid;grid-template-columns:minmax(0,1fr) 108px 62px 32px;gap:8px;align-items:end}
   .row .rm{
-    background:transparent;border:1px solid var(--line);color:var(--muted);
-    border-radius:6px;height:38px;cursor:pointer;font-size:16px;padding:0;
+    background:#fff;border:1px solid var(--line);color:var(--ink-2);
+    border-radius:0;height:38px;cursor:pointer;font-size:16px;padding:0;
   }
-  .row .rm:hover{color:var(--accent);border-color:var(--accent)}
-  .row-head{display:grid;grid-template-columns:minmax(0,1fr) 108px 62px 32px;gap:8px;font-size:12.5px;color:var(--muted);margin-bottom:2px}
+  .row .rm:hover{color:var(--lead);border-color:var(--lead)}
+  .row-head{display:grid;grid-template-columns:minmax(0,1fr) 108px 62px 32px;gap:8px;font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--ink-2);margin-bottom:2px}
+
+  .seg{display:flex;border:1px solid var(--line)}
+  .seg button{
+    flex:1;font:500 11px var(--mono);letter-spacing:0;padding:9px 2px;white-space:nowrap;
+    background:#fff;border:0;border-right:1px solid var(--line);cursor:pointer;color:var(--ink-2);
+  }
+  .seg button:last-child{border-right:0}
+  .seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
 
   .btn{
-    font-family:inherit;font-size:14px;font-weight:500;cursor:pointer;
-    border-radius:6px;padding:10px 16px;border:1px solid var(--line);
-    background:transparent;color:var(--text);
+    font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.05em;cursor:pointer;
+    border-radius:0;padding:10px 16px;border:1px solid var(--line);
+    background:#fff;color:var(--ink-2);
   }
-  .btn:hover{border-color:var(--accent)}
-  .btn-solid{background:var(--accent);border-color:var(--accent);color:#fff}
-  .btn-solid:hover{filter:brightness(1.08)}
+  .btn:hover{border-color:var(--rule);color:var(--rule)}
+  .btn-solid{background:var(--ink);border-color:var(--ink);color:#fff;text-transform:uppercase}
+  .btn-solid:hover{background:var(--rule);border-color:var(--rule);color:#fff}
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 
   .preview{position:sticky;top:28px}
-  .preview canvas{width:100%;height:auto;display:block;border-radius:10px}
-  .note{color:var(--muted);font-size:12.5px;margin-top:12px;min-height:1.6em}
+  .preview canvas{width:100%;height:auto;display:block}
+  .note{color:var(--ink-2);font-size:12.5px;margin-top:12px;min-height:1.6em}
 
   @media (max-width:920px){
     .wrap{grid-template-columns:1fr;gap:28px}
@@ -97,7 +111,7 @@
       <div class="row-head"><span>品名</span><span>日元单价</span><span>数量</span><span></span></div>
       <div class="rows" id="rows"></div>
       <div class="actions">
-        <button class="btn" id="addRow">再加一行</button>
+        <button class="btn" id="addRow">+ 再加一行</button>
       </div>
     </div>
 
@@ -115,12 +129,12 @@
           <span class="hint">1 元 = ? 日元</span>
         </div>
         <div class="f">
-          <label for="round">尾数</label>
-          <select id="round">
-            <option value="none">保留分</option>
-            <option value="jiao">进位到角</option>
-            <option value="yuan">进位到元</option>
-          </select>
+          <label>尾数</label>
+          <div class="seg" id="roundSeg" role="group">
+            <button type="button" data-v="none" aria-pressed="true">保留分</button>
+            <button type="button" data-v="jiao" aria-pressed="false">进位角</button>
+            <button type="button" data-v="yuan" aria-pressed="false">进位元</button>
+          </div>
           <span class="hint">抹零方式</span>
         </div>
       </div>
@@ -131,11 +145,11 @@
           <span class="hint">按件数平摊到每件</span>
         </div>
         <div class="f">
-          <label for="feeCur">通讯费币种</label>
-          <select id="feeCur">
-            <option value="JPY">日元</option>
-            <option value="CNY">人民币</option>
-          </select>
+          <label>通讯费币种</label>
+          <div class="seg" id="feeCurSeg" role="group">
+            <button type="button" data-v="JPY" aria-pressed="true">日元</button>
+            <button type="button" data-v="CNY" aria-pressed="false">人民币</button>
+          </div>
         </div>
       </div>
     </div>
@@ -167,7 +181,21 @@
   const rowsEl = $('rows'), cv = $('cv'), ctx = cv.getContext('2d');
   const noteEl = $('note');
 
-  const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans SC", "PingFang SC", monospace';
+  const MONO = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans SC", "PingFang SC", monospace';
+
+  /* ---------- 分段按钮 ---------- */
+  function segValue(segId){
+    const btn = document.querySelector('#' + segId + ' button[aria-pressed="true"]');
+    return btn ? btn.dataset.v : null;
+  }
+  function setSeg(segId, v){
+    document.querySelectorAll('#' + segId + ' button').forEach(b => {
+      b.setAttribute('aria-pressed', b.dataset.v === v ? 'true' : 'false');
+    });
+  }
+  document.querySelectorAll('.seg button').forEach(b => {
+    b.addEventListener('click', () => { setSeg(b.closest('.seg').id, b.dataset.v); render(); });
+  });
 
   /* ---------- 表单 ---------- */
   function addRow(name='', price='', qty=1){
@@ -211,8 +239,8 @@
     const k = zhe / 10;
     const ex = Math.max(0.01, +$('rate').value || 20);
     const feeTotal = Math.max(0, +$('fee').value || 0);
-    const feeCur = $('feeCur').value;
-    const mode = $('round').value;
+    const feeCur = segValue('feeCurSeg') || 'JPY';
+    const mode = segValue('roundSeg') || 'none';
 
     const qty = items.reduce((s,i) => s + i.qty, 0);
     const grossJ = items.reduce((s,i) => s + i.price * i.qty, 0);
@@ -308,7 +336,7 @@
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
     // 背景
-    ctx.fillStyle = '#F6F1E9';
+    ctx.fillStyle = '#E3E8EA';
     ctx.fillRect(0, 0, W, H_);
 
     // 纸张（上下锯齿）
@@ -326,17 +354,17 @@
     }
     ctx.closePath();
     ctx.save();
-    ctx.shadowColor = 'rgba(51,44,36,.18)';
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 6;
-    ctx.fillStyle = '#FFFEFB';
+    ctx.shadowColor = 'rgba(18,23,27,.2)';
+    ctx.shadowBlur = 16;
+    ctx.shadowOffsetY = 5;
+    ctx.fillStyle = '#FFFFFF';
     ctx.fill();
     ctx.restore();
 
     // 内容
     const IL = x0 + 22, IR = x1 - 22, IW = IR - IL;
     let y = y0 + 34;
-    const ink = '#1A1714', fade = '#8C857C', acc = '#D2461F';
+    const ink = '#12171B', fade = '#5A666E', acc = '#C4452F';
 
     const right = (txt, yy) => { ctx.textAlign = 'right'; ctx.fillText(txt, IR, yy); ctx.textAlign = 'left'; };
     const clip = (txt, max) => {
@@ -346,7 +374,7 @@
       return s + '…';
     };
     const dash = yy => {
-      ctx.strokeStyle = '#D8D2C8'; ctx.lineWidth = 1;
+      ctx.strokeStyle = '#C3CDD2'; ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(IL, yy + .5); ctx.lineTo(IR, yy + .5); ctx.stroke();
       ctx.setLineDash([]);
@@ -444,7 +472,7 @@
       if (!window.storage) return;
       await window.storage.set(KEY, JSON.stringify({
         rate: $('rate').value, discount: $('discount').value,
-        fee: $('fee').value, feeCur: $('feeCur').value, round: $('round').value
+        fee: $('fee').value, feeCur: segValue('feeCurSeg'), round: segValue('roundSeg')
       }));
     }catch(e){}
   }
@@ -454,7 +482,9 @@
       const r = await window.storage.get(KEY);
       if (!r) return;
       const s = JSON.parse(r.value);
-      ['rate','discount','fee','feeCur','round'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+      ['rate','discount','fee'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+      if (s.feeCur) setSeg('feeCurSeg', s.feeCur);
+      if (s.round) setSeg('roundSeg', s.round);
     }catch(e){}
   }
 
