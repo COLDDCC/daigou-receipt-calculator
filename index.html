@@ -9,13 +9,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --ink:#241C26;
-    --panel:#2E2532;
-    --field:#3A2F3E;
-    --line:#4C3F51;
-    --text:#F3EEE8;
-    --muted:#A398A6;
-    --accent:#E0532C;
+    --ink:#F6F1E9;
+    --panel:#FFFFFF;
+    --field:#F4EEE4;
+    --line:#E4DBCC;
+    --text:#332C24;
+    --muted:#8A7F70;
+    --accent:#D2571F;
     --paper:#FFFEFB;
   }
   *{box-sizing:border-box}
@@ -44,13 +44,12 @@
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
   .f{display:flex;flex-direction:column;gap:6px;min-width:0}
   .f label{font-size:12.5px;color:var(--muted)}
-  input,select,textarea{
+  input,select{
     font-family:inherit;font-size:15px;color:var(--text);
     background:var(--field);border:1px solid var(--line);border-radius:6px;
     padding:9px 11px;width:100%;
   }
-  input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
-  textarea{resize:vertical;min-height:60px;font-size:14px}
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
   .hint{font-size:11.5px;color:var(--muted);margin-top:-2px}
 
   .rows{display:flex;flex-direction:column;gap:10px}
@@ -147,10 +146,6 @@
         <div class="f"><label for="cust">客户</label><input id="cust" type="text" placeholder="昵称"></div>
         <div class="f"><label for="date">日期</label><input id="date" type="date"></div>
         <div class="f"><label for="no">单号</label><input id="no" type="text"></div>
-      </div>
-      <div class="f" style="margin-top:14px">
-        <label for="memo">备注</label>
-        <textarea id="memo" placeholder="例：等齐后一起发，运费到付"></textarea>
       </div>
     </div>
   </div>
@@ -282,8 +277,6 @@
       L.push({t:'kvs', a:'（原 ' + d.rawTotal.toFixed(2) + ' 元，' + (d.mode==='yuan'?'进位到元':'进位到角') + '）', b:''});
     }
     L.push({t:'rule'});
-    const memo = $('memo').value.trim();
-    if (memo) memo.split('\n').forEach(m => L.push({t:'text', v:m}));
     L.push({t:'gap', h:4});
     L.push({t:'center', v:'共 ' + d.qty + ' 件 · 请核对后付款'});
     return L;
@@ -315,7 +308,7 @@
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
     // 背景
-    ctx.fillStyle = '#241C26';
+    ctx.fillStyle = '#F6F1E9';
     ctx.fillRect(0, 0, W, H_);
 
     // 纸张（上下锯齿）
@@ -333,7 +326,7 @@
     }
     ctx.closePath();
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,.45)';
+    ctx.shadowColor = 'rgba(51,44,36,.18)';
     ctx.shadowBlur = 18;
     ctx.shadowOffsetY = 6;
     ctx.fillStyle = '#FFFEFB';
