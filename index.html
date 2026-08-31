@@ -6,7 +6,7 @@
 <title>代购费用核算 · 小票生成</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anybody:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Anybody:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=DotGothic16&display=swap" rel="stylesheet">
 <style>
   :root{
     --field:#EAF3FC;
@@ -211,6 +211,7 @@
   const noteEl = $('note');
 
   const MONO = '"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Noto Sans SC", "PingFang SC", monospace';
+  const DIGIT = '"DotGothic16", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
   /* ---------- 分段按钮 ---------- */
   function segValue(segId){
@@ -487,7 +488,7 @@
         ctx.fillStyle = brand; ctx.font = '700 19px ' + MONO;
         ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 20); ctx.textAlign = 'left';
       } else if (l.t === 'sub'){
-        ctx.fillStyle = fade; ctx.font = '400 10px ' + MONO;
+        ctx.fillStyle = fade; ctx.font = '400 11px ' + DIGIT;
         ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 12); ctx.textAlign = 'left';
       } else if (l.t === 'rule'){
         dash(y + 8);
@@ -506,13 +507,13 @@
         let sub = '   ' + fmtJ(it.price) + ' × ' + it.qty;
         if (dd.zhe < 10) sub += '  折后 ' + fmtJ(it.netJ);
         ctx.fillText(sub, IL, y + 33);
-        ctx.font = '500 13px ' + MONO; ctx.fillStyle = ink;
+        ctx.font = '500 14px ' + DIGIT; ctx.fillStyle = ink;
         right(fmtC(it.cny), y + 33);
       } else if (l.t === 'total'){
         ctx.font = '700 15px ' + MONO; ctx.fillStyle = ink;
         ctx.fillText(l.a, IL, y + 22);
-        ctx.font = '700 21px ' + MONO; ctx.fillStyle = acc;
-        right(l.b, y + 23);
+        ctx.font = '700 24px ' + DIGIT; ctx.fillStyle = acc;
+        right(l.b, y + 24);
       } else if (l.t === 'text'){
         ctx.font = '400 12px ' + MONO; ctx.fillStyle = fade;
         ctx.fillText(clip(l.v, IW), IL, y + 14);
@@ -520,7 +521,7 @@
         ctx.font = '400 11.5px ' + MONO; ctx.fillStyle = fade;
         ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 14); ctx.textAlign = 'left';
       } else if (l.t === 'formula'){
-        ctx.font = '400 11px ' + MONO; ctx.fillStyle = fade;
+        ctx.font = '400 12px ' + DIGIT; ctx.fillStyle = fade;
         ctx.textAlign = 'center'; ctx.fillText(clip(l.v, IW), (IL+IR)/2, y + 15); ctx.textAlign = 'left';
       }
       y += H[l.t];
