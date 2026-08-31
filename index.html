@@ -248,10 +248,11 @@
     L.push({t:'gap', h:10});
     L.push({t:'rule'});
     const cust = $('cust').value.trim();
-    if (cust) L.push({t:'kv', a:'客户', b:cust});
+    L.push({t:'kv', a:'客户', b:cust || '-'});
     L.push({t:'kv', a:'日期', b:$('date').value || ''});
     const no = $('no').value.trim();
     if (no) L.push({t:'kv', a:'单号', b:no});
+    L.push({t:'kv', a:'购买件数', b:d.qty + ' 件'});
     L.push({t:'rule'});
 
     if (!d.items.length){
@@ -274,6 +275,7 @@
       const per = d.feeCur === 'CNY' ? fmtC(d.perUnitRaw) : fmtJ(d.perUnitRaw);
       L.push({t:'kv', a:'通讯费平摊  ' + d.qty + ' 件 × ' + per, b:fmtC(d.feeCNY)});
     }
+    L.push({t:'formula', v:buildFormula(d)});
     L.push({t:'rule'});
     L.push({t:'total', a:'应付合计', b:fmtC(d.total)});
     if (Math.abs(d.total - d.rawTotal) > 0.004){
@@ -287,7 +289,17 @@
     return L;
   }
 
-  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, total:38, text:20, center:22};
+  function buildFormula(d){
+    const jpy = n => Math.round(n).toLocaleString('en-US');
+    let f = jpy(d.grossJ);
+    if (d.zhe < 10) f += ' × ' + d.k.toFixed(2);
+    f += ' ÷ ' + d.ex;
+    if (d.feeCNY > 0) f = '(' + f + ') + ' + d.feeCNY.toFixed(2);
+    f += ' = ' + d.total.toFixed(2) + ' 元';
+    return f;
+  }
+
+  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, total:38, text:20, center:22, formula:22};
 
   function drawReceipt(scale){
     const d = compute();
@@ -387,6 +399,9 @@
       } else if (l.t === 'center'){
         ctx.font = '400 11.5px ' + MONO; ctx.fillStyle = fade;
         ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 14); ctx.textAlign = 'left';
+      } else if (l.t === 'formula'){
+        ctx.font = '400 11px ' + MONO; ctx.fillStyle = fade;
+        ctx.textAlign = 'center'; ctx.fillText(clip(l.v, IW), (IL+IR)/2, y + 15); ctx.textAlign = 'left';
       }
       y += H[l.t];
     });
