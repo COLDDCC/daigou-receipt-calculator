@@ -55,6 +55,12 @@
   }
   input[type=number],#no,.i-price,.i-qty{font-family:var(--mono)}
   input:focus,select:focus{outline:2px solid var(--rule);outline-offset:1px;border-color:transparent}
+  textarea{
+    font-family:var(--mono);font-size:13px;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:0;
+    padding:9px 11px;width:100%;resize:vertical;min-height:84px;
+  }
+  textarea:focus{outline:2px solid var(--rule);outline-offset:1px;border-color:transparent}
   .hint{font-size:11.5px;color:var(--ink-2);margin-top:-2px}
 
   .rows{display:flex;flex-direction:column;gap:10px}
@@ -105,6 +111,18 @@
   </header>
 
   <div>
+    <div class="panel">
+      <h2>从表格导入</h2>
+      <div class="f">
+        <label for="importText">粘贴表格内容</label>
+        <textarea id="importText" rows="4" placeholder="从 Excel / WPS 复制品名和单价，粘贴到这里&#10;支持「品名␉单价」或「品名␉单价␉数量」，用 Tab / 逗号 / 两个以上空格分列&#10;单独一行写「客户：昵称」会自动填到下面的客户"></textarea>
+        <span class="hint">按 Tab、逗号或多个空格分列都能识别</span>
+      </div>
+      <div class="actions">
+        <button class="btn btn-solid" id="importBtn">解析导入</button>
+      </div>
+    </div>
+
     <div class="panel">
       <h2>商品明细</h2>
       <div class="row-head"><span>品名</span><span>日元单价</span><span>数量</span><span></span></div>
@@ -221,6 +239,53 @@
       qty: Math.max(1, Math.round(+r.querySelector('.i-qty').value || 1))
     })).filter(i => i.price > 0 || i.name);
   }
+
+  /* ---------- 表格导入 ---------- */
+  const CUST_RE = /^(客户|买家|收件人|昵称)[:：]\s*(.+)$/;
+
+  function parseImport(text){
+    const items = [];
+    let cust = null;
+    text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach(line => {
+      const m = line.match(CUST_RE);
+      if (m){ cust = m[2].trim(); return; }
+
+      let parts = line.split('\t').map(s => s.trim()).filter(Boolean);
+      if (parts.length < 2) parts = line.split(',').map(s => s.trim()).filter(Boolean);
+      if (parts.length < 2) parts = line.split(/\s{2,}/).map(s => s.trim()).filter(Boolean);
+
+      if (parts.length >= 2){
+        const name = parts[0];
+        const price = parseFloat(parts[1].replace(/[¥￥,，\s]/g, ''));
+        const qty = parts.length >= 3 ? Math.max(1, Math.round(parseFloat(parts[2])) || 1) : 1;
+        if (name && price > 0){ items.push({ name, price, qty }); return; }
+      }
+
+      if (!/\d/.test(line) && !cust) cust = line;
+    });
+    return { items, cust };
+  }
+
+  $('importBtn').addEventListener('click', () => {
+    const { items, cust } = parseImport($('importText').value);
+    if (!items.length && !cust){
+      noteEl.textContent = '没识别到内容，检查一下格式（品名和单价之间用 Tab、逗号或至少两个空格分隔）。';
+      return;
+    }
+    if (items.length){
+      const allEmpty = [...rowsEl.children].every(r =>
+        !r.querySelector('.i-name').value.trim() && !r.querySelector('.i-price').value.trim());
+      if (allEmpty) rowsEl.innerHTML = '';
+      items.forEach(it => addRow(it.name, it.price, it.qty));
+    }
+    if (cust) $('cust').value = cust;
+    $('importText').value = '';
+    render();
+    const msg = [];
+    if (items.length) msg.push('导入 ' + items.length + ' 条商品');
+    if (cust) msg.push('客户：' + cust);
+    noteEl.textContent = msg.join('，') + '。';
+  });
 
   /* ---------- 计算 ---------- */
   const fmtJ = n => '¥' + Math.round(n).toLocaleString('en-US');
