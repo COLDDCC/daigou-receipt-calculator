@@ -9,14 +9,13 @@
 <link href="https://fonts.googleapis.com/css2?family=Anybody:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --field:#E3E8EA;
+    --field:#EAF3FC;
     --paper:#FFFFFF;
-    --ink:#12171B;
-    --ink-2:#5A666E;
-    --rule:#4A7FB5;
-    --pad:#5F8A6E;
-    --lead:#C4452F;
-    --line:#C3CDD2;
+    --ink:#12324E;
+    --ink-2:#5D7B96;
+    --rule:#1768C9;
+    --lead:#D8472E;
+    --line:#CBDCEC;
     --display:'Anybody','Noto Sans SC',system-ui,sans-serif;
     --body:'IBM Plex Sans','Noto Sans SC',system-ui,sans-serif;
     --mono:'IBM Plex Mono','Noto Sans SC',ui-monospace,monospace;
@@ -29,8 +28,8 @@
     font:400 15px/1.6 var(--body);
     -webkit-font-smoothing:antialiased;
     background-image:
-      linear-gradient(to right,rgba(74,127,181,.09) .6px,transparent .6px),
-      linear-gradient(to bottom,rgba(74,127,181,.09) .6px,transparent .6px);
+      linear-gradient(to right,rgba(23,104,201,.08) .6px,transparent .6px),
+      linear-gradient(to bottom,rgba(23,104,201,.08) .6px,transparent .6px);
     background-size:5mm 5mm;
   }
   .wrap{
@@ -73,7 +72,7 @@
     background:#fff;border:0;border-right:1px solid var(--line);cursor:pointer;color:var(--ink-2);
   }
   .seg button:last-child{border-right:0}
-  .seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
+  .seg button[aria-pressed="true"]{background:var(--rule);color:#fff}
 
   .btn{
     font-family:var(--mono);font-size:13px;font-weight:500;letter-spacing:.05em;cursor:pointer;
@@ -81,8 +80,8 @@
     background:#fff;color:var(--ink-2);
   }
   .btn:hover{border-color:var(--rule);color:var(--rule)}
-  .btn-solid{background:var(--ink);border-color:var(--ink);color:#fff;text-transform:uppercase}
-  .btn-solid:hover{background:var(--rule);border-color:var(--rule);color:#fff}
+  .btn-solid{background:var(--rule);border-color:var(--rule);color:#fff;text-transform:uppercase}
+  .btn-solid:hover{background:var(--ink);border-color:var(--ink);color:#fff}
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 
   .preview{position:sticky;top:28px}
@@ -336,7 +335,7 @@
     ctx.setTransform(scale, 0, 0, scale, 0, 0);
 
     // 背景
-    ctx.fillStyle = '#E3E8EA';
+    ctx.fillStyle = '#EAF3FC';
     ctx.fillRect(0, 0, W, H_);
 
     // 纸张（上下锯齿）
@@ -354,17 +353,24 @@
     }
     ctx.closePath();
     ctx.save();
-    ctx.shadowColor = 'rgba(18,23,27,.2)';
+    ctx.shadowColor = 'rgba(18,50,78,.18)';
     ctx.shadowBlur = 16;
     ctx.shadowOffsetY = 5;
     ctx.fillStyle = '#FFFFFF';
     ctx.fill();
     ctx.restore();
 
+    // 品牌色条
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = '#1768C9';
+    ctx.fillRect(x0, y0, x1 - x0, 6);
+    ctx.restore();
+
     // 内容
     const IL = x0 + 22, IR = x1 - 22, IW = IR - IL;
     let y = y0 + 34;
-    const ink = '#12171B', fade = '#5A666E', acc = '#C4452F';
+    const ink = '#12324E', fade = '#5D7B96', acc = '#D8472E', brand = '#1768C9';
 
     const right = (txt, yy) => { ctx.textAlign = 'right'; ctx.fillText(txt, IR, yy); ctx.textAlign = 'left'; };
     const clip = (txt, max) => {
@@ -374,7 +380,7 @@
       return s + '…';
     };
     const dash = yy => {
-      ctx.strokeStyle = '#C3CDD2'; ctx.lineWidth = 1;
+      ctx.strokeStyle = '#CBDCEC'; ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(IL, yy + .5); ctx.lineTo(IR, yy + .5); ctx.stroke();
       ctx.setLineDash([]);
@@ -385,7 +391,7 @@
     L.forEach(l => {
       if (l.t === 'gap'){ y += l.h; return; }
       if (l.t === 'title'){
-        ctx.fillStyle = ink; ctx.font = '700 19px ' + MONO;
+        ctx.fillStyle = brand; ctx.font = '700 19px ' + MONO;
         ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 20); ctx.textAlign = 'left';
       } else if (l.t === 'sub'){
         ctx.fillStyle = fade; ctx.font = '400 10px ' + MONO;
