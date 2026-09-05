@@ -90,6 +90,15 @@
   .btn-solid:hover{background:var(--ink);border-color:var(--ink);color:#fff}
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 
+  .chip{
+    font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.03em;cursor:pointer;
+    border-radius:0;padding:8px 12px;border:1px solid var(--line);background:#fff;color:var(--ink-2);
+  }
+  .chip:hover{border-color:var(--rule);color:var(--rule)}
+  .chip[aria-pressed="true"]{background:var(--rule);border-color:var(--rule);color:#fff}
+  .chip.done{border-color:var(--ink);color:var(--ink)}
+  .chip.done[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+
   .preview{position:sticky;top:28px}
   .preview canvas{width:100%;height:auto;display:block}
   .note{color:var(--ink-2);font-size:12.5px;margin-top:12px;min-height:1.6em}
@@ -124,6 +133,12 @@
       <div class="actions">
         <button class="btn btn-solid" id="importBtn">解析导入</button>
       </div>
+    </div>
+
+    <div class="panel" id="batchPanel" hidden>
+      <h2>本批客户</h2>
+      <p class="hint" style="margin-bottom:10px">本批共 <b id="batchTotalQty">0</b> 点，点客户名切到 TA 的商品和总点数，生成完点「下载小票」再切下一个</p>
+      <div class="actions" id="batchChips" style="margin-top:0"></div>
     </div>
 
     <div class="panel">
@@ -347,7 +362,7 @@
           ? Math.max(1, Math.round(parseFloat(cleanNum(cells[header.qtyCol] || ''))) || 1) : 1;
         const tag = header.custCol !== -1 ? (cells[header.custCol] || '').trim() : '';
         if (name && price > 0 && !TOTAL_RE.test(name)){
-          items.push({ name, price, qty });
+          items.push({ name, price, qty, tag });
           if (tag) custTags.add(tag);
           return;
         }
@@ -374,12 +389,77 @@
     return { items, cust, skipped, custNote };
   }
 
+  /* ---------- 多客户合买批次 ---------- */
+  const UNTAGGED = '未标注';
+  let batchGroups = null;   // Map<客户标签, 商品数组>
+  let batchQtyTotal = 0;
+  let activeBatchTag = null;
+  const batchDone = new Set();
+
+  function buildBatchGroups(items){
+    const groups = new Map();
+    items.forEach(it => {
+      const tag = it.tag || UNTAGGED;
+      if (!groups.has(tag)) groups.set(tag, []);
+      groups.get(tag).push(it);
+    });
+    return groups;
+  }
+
+  function renderBatchChips(){
+    const box = $('batchChips');
+    box.innerHTML = '';
+    if (!batchGroups) return;
+    [...batchGroups.entries()].forEach(([tag, its]) => {
+      const qty = its.reduce((s, i) => s + i.qty, 0);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip' + (batchDone.has(tag) ? ' done' : '');
+      b.setAttribute('aria-pressed', tag === activeBatchTag ? 'true' : 'false');
+      b.textContent = tag + '（' + qty + '件）' + (batchDone.has(tag) ? ' ✓' : '');
+      b.addEventListener('click', () => loadBatchGroup(tag));
+      box.appendChild(b);
+    });
+  }
+
+  function loadBatchGroup(tag){
+    const its = batchGroups.get(tag);
+    if (!its) return;
+    rowsEl.innerHTML = '';
+    its.forEach(it => addRow(it.name, it.price, it.qty));
+    $('cust').value = tag === UNTAGGED ? '' : tag;
+    $('batchQty').value = batchQtyTotal;
+    activeBatchTag = tag;
+    renderBatchChips();
+    render();
+  }
+
   $('importBtn').addEventListener('click', () => {
     const { items, cust, skipped, custNote } = parseImport($('importText').value);
     if (!items.length && !cust){
       noteEl.textContent = '没识别到内容，检查一下格式（品名和单价之间用 Tab、逗号或至少两个空格分隔）。';
       return;
     }
+
+    const distinctTags = new Set(items.map(it => it.tag).filter(Boolean));
+    if (distinctTags.size > 1){
+      batchGroups = buildBatchGroups(items);
+      batchQtyTotal = items.reduce((s, i) => s + i.qty, 0);
+      batchDone.clear();
+      activeBatchTag = null;
+      $('batchTotalQty').textContent = batchQtyTotal;
+      $('batchPanel').hidden = false;
+      renderBatchChips();
+      const [firstTag] = batchGroups.keys();
+      loadBatchGroup(firstTag);
+      $('importText').value = '';
+      noteEl.textContent = '识别到 ' + distinctTags.size + ' 个客户、共 ' + batchQtyTotal +
+        ' 件，已加载「' + firstTag + '」，切上面的客户名生成其余小票。';
+      return;
+    }
+
+    batchGroups = null;
+    $('batchPanel').hidden = true;
     if (items.length){
       const allEmpty = [...rowsEl.children].every(r =>
         !r.querySelector('.i-name').value.trim() && !r.querySelector('.i-price').value.trim());
@@ -647,6 +727,10 @@
     a.href = cv.toDataURL('image/png');
     a.click();
     render();
+    if (batchGroups && activeBatchTag){
+      batchDone.add(activeBatchTag);
+      renderBatchChips();
+    }
     noteEl.textContent = '已下载。';
   });
 
