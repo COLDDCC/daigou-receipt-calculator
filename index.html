@@ -258,32 +258,65 @@
 
   /* ---------- 表格导入 ---------- */
   const CUST_RE = /^(客户|买家|收件人|昵称)[:：]\s*(.+)$/;
+  const URL_RE = /^https?:\/\//i;
+  const TOTAL_RE = /^(合计|总计|小计|共计|total|subtotal)/i;
+  const cleanNum = s => String(s).trim().replace(/^[×x*]\s*/i, '').replace(/[¥￥,，\s]/g, '');
+  const isNumericCell = c => { const n = cleanNum(c); return n !== '' && /^\d+(\.\d+)?$/.test(n); };
+
+  // 从分好列的单元格里找品名/单价/数量：从左往右找第一个数字列当单价（自动跳过
+  // 空单元格和链接），紧接着下一个数字列当数量；单价前面所有非数字非链接的列拼起来当品名
+  // ——这样"品名/单价/数量"三列和"品名里带空格、按空格拆词"两种粘贴方式都能对。
+  function parseCells(cells){
+    const trimmed = cells.map(c => (c || '').trim());
+    let priceIdx = -1, price = 0;
+    for (let i = 0; i < trimmed.length; i++){
+      const c = trimmed[i];
+      if (!c || URL_RE.test(c)) continue;
+      if (isNumericCell(c)){ price = parseFloat(cleanNum(c)); priceIdx = i; break; }
+    }
+    if (priceIdx === -1 || price <= 0) return null;
+
+    let qty = 1;
+    for (let i = priceIdx + 1; i < trimmed.length; i++){
+      const c = trimmed[i];
+      if (!c || URL_RE.test(c)) continue;
+      if (isNumericCell(c)){ qty = Math.max(1, Math.round(parseFloat(cleanNum(c)))); break; }
+    }
+
+    const name = trimmed.slice(0, priceIdx)
+      .filter(c => c && !URL_RE.test(c) && !isNumericCell(c))
+      .join(' ').trim();
+    if (!name || TOTAL_RE.test(name)) return null;
+    return { name, price, qty };
+  }
 
   function parseImport(text){
     const items = [];
     let cust = null;
-    text.split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach(line => {
+    let skipped = 0;
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+    lines.forEach((line, idx) => {
       const m = line.match(CUST_RE);
       if (m){ cust = m[2].trim(); return; }
 
-      let parts = line.split('\t').map(s => s.trim()).filter(Boolean);
-      if (parts.length < 2) parts = line.split(',').map(s => s.trim()).filter(Boolean);
-      if (parts.length < 2) parts = line.split(/\s{2,}/).map(s => s.trim()).filter(Boolean);
+      // Tab/逗号分列时保留空单元格（列位置有意义）；都不行再按空白拆词兜底。
+      let cells = line.split('\t').map(s => s.trim());
+      if (cells.length < 2) cells = line.split(',').map(s => s.trim());
+      if (cells.length < 2) cells = line.split(/\s+/).map(s => s.trim());
 
-      if (parts.length >= 2){
-        const name = parts[0];
-        const price = parseFloat(parts[1].replace(/[¥￥,，\s]/g, ''));
-        const qty = parts.length >= 3 ? Math.max(1, Math.round(parseFloat(parts[2])) || 1) : 1;
-        if (name && price > 0){ items.push({ name, price, qty }); return; }
-      }
+      const hit = parseCells(cells);
+      if (hit){ items.push(hit); return; }
 
-      if (!/\d/.test(line) && !cust) cust = line;
+      // 识别不了、又不像客户名的整行：只把"第一行、没有数字"当作隐式客户名，其余计入跳过。
+      if (idx === 0 && !cust && !/\d/.test(line)){ cust = line; return; }
+      skipped++;
     });
-    return { items, cust };
+    return { items, cust, skipped };
   }
 
   $('importBtn').addEventListener('click', () => {
-    const { items, cust } = parseImport($('importText').value);
+    const { items, cust, skipped } = parseImport($('importText').value);
     if (!items.length && !cust){
       noteEl.textContent = '没识别到内容，检查一下格式（品名和单价之间用 Tab、逗号或至少两个空格分隔）。';
       return;
@@ -300,6 +333,7 @@
     const msg = [];
     if (items.length) msg.push('导入 ' + items.length + ' 条商品');
     if (cust) msg.push('客户：' + cust);
+    if (skipped) msg.push('有 ' + skipped + ' 行没识别出来，已跳过');
     noteEl.textContent = msg.join('，') + '。';
   });
 
