@@ -263,6 +263,38 @@
   const cleanNum = s => String(s).trim().replace(/^[×x*]\s*/i, '').replace(/[¥￥,，\s]/g, '');
   const isNumericCell = c => { const n = cleanNum(c); return n !== '' && /^\d+(\.\d+)?$/.test(n); };
 
+  const H_NAME_RE = /^(名称|品名|商品名?|标题|name|item)$/i;
+  const H_PRICE_STRICT_RE = /(实际价格|到手价|成交价|实付|现价)/;
+  const H_PRICE_RE = /(价格|单价|价)/;
+  const H_QTY_RE = /^(数量|件数|个数|qty)$/i;
+  const H_CUST_RE = /^(客户|买家|收件人|昵称|cn|customer)$/i;
+
+  // 识别第一行是不是表头（含"名称/价格/数量/客户"这类关键词），是的话记下
+  // 每个字段在哪一列——两个价格列（原价+实际价格）时优先用"实际/到手"这个，
+  // 不再瞎猜"第二个数字是数量"。
+  function detectHeader(cells){
+    const trimmed = cells.map(c => (c || '').trim());
+    let nameCol = -1, priceCol = -1, priceStrictCol = -1, qtyCol = -1, custCol = -1;
+    trimmed.forEach((c, i) => {
+      if (!c) return;
+      if (nameCol === -1 && H_NAME_RE.test(c)) nameCol = i;
+      if (H_PRICE_STRICT_RE.test(c)) priceStrictCol = i;
+      else if (H_PRICE_RE.test(c)) priceCol = i;
+      if (H_QTY_RE.test(c)) qtyCol = i;
+      if (H_CUST_RE.test(c)) custCol = i;
+    });
+    const finalPriceCol = priceStrictCol !== -1 ? priceStrictCol : priceCol;
+    if (nameCol === -1 || finalPriceCol === -1) return null;
+    return { nameCol, priceCol: finalPriceCol, qtyCol, custCol };
+  }
+
+  function splitCells(line){
+    let cells = line.split('\t').map(s => s.trim());
+    if (cells.length < 2) cells = line.split(',').map(s => s.trim());
+    if (cells.length < 2) cells = line.split(/\s+/).map(s => s.trim());
+    return cells;
+  }
+
   // 从分好列的单元格里找品名/单价/数量：从左往右找第一个数字列当单价（自动跳过
   // 空单元格和链接），紧接着下一个数字列当数量；单价前面所有非数字非链接的列拼起来当品名
   // ——这样"品名/单价/数量"三列和"品名里带空格、按空格拆词"两种粘贴方式都能对。
@@ -291,19 +323,37 @@
   }
 
   function parseImport(text){
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return { items: [], cust: null, skipped: 0, custNote: '' };
+
     const items = [];
     let cust = null;
     let skipped = 0;
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const custTags = new Set();
 
-    lines.forEach((line, idx) => {
+    const header = detectHeader(splitCells(lines[0]));
+    const dataLines = header ? lines.slice(1) : lines;
+
+    dataLines.forEach((line, idx) => {
       const m = line.match(CUST_RE);
       if (m){ cust = m[2].trim(); return; }
 
-      // Tab/逗号分列时保留空单元格（列位置有意义）；都不行再按空白拆词兜底。
-      let cells = line.split('\t').map(s => s.trim());
-      if (cells.length < 2) cells = line.split(',').map(s => s.trim());
-      if (cells.length < 2) cells = line.split(/\s+/).map(s => s.trim());
+      const cells = splitCells(line);
+
+      if (header){
+        const name = (cells[header.nameCol] || '').trim();
+        const price = parseFloat(cleanNum(cells[header.priceCol] || ''));
+        const qty = header.qtyCol !== -1
+          ? Math.max(1, Math.round(parseFloat(cleanNum(cells[header.qtyCol] || ''))) || 1) : 1;
+        const tag = header.custCol !== -1 ? (cells[header.custCol] || '').trim() : '';
+        if (name && price > 0 && !TOTAL_RE.test(name)){
+          items.push({ name, price, qty });
+          if (tag) custTags.add(tag);
+          return;
+        }
+        skipped++;
+        return;
+      }
 
       const hit = parseCells(cells);
       if (hit){ items.push(hit); return; }
@@ -312,11 +362,20 @@
       if (idx === 0 && !cust && !/\d/.test(line)){ cust = line; return; }
       skipped++;
     });
-    return { items, cust, skipped };
+
+    let custNote = '';
+    if (!cust && custTags.size === 1){
+      cust = [...custTags][0];
+    } else if (!cust && custTags.size > 1){
+      custNote = '检测到 ' + custTags.size + ' 个不同客户标记（' + [...custTags].join('、') +
+        '），这是多人合买的表格，客户栏先留空，请按客户分开粘贴分别生成小票';
+    }
+
+    return { items, cust, skipped, custNote };
   }
 
   $('importBtn').addEventListener('click', () => {
-    const { items, cust, skipped } = parseImport($('importText').value);
+    const { items, cust, skipped, custNote } = parseImport($('importText').value);
     if (!items.length && !cust){
       noteEl.textContent = '没识别到内容，检查一下格式（品名和单价之间用 Tab、逗号或至少两个空格分隔）。';
       return;
@@ -334,6 +393,7 @@
     if (items.length) msg.push('导入 ' + items.length + ' 条商品');
     if (cust) msg.push('客户：' + cust);
     if (skipped) msg.push('有 ' + skipped + ' 行没识别出来，已跳过');
+    if (custNote) msg.push(custNote);
     noteEl.textContent = msg.join('，') + '。';
   });
 
