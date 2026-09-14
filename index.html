@@ -16,6 +16,8 @@
     --rule:#1768C9;
     --lead:#D8472E;
     --line:#CBDCEC;
+    --ok:#1E8A4C;
+    --ok-bg:#EAF7EF;
     --display:'Anybody','Noto Sans SC',system-ui,sans-serif;
     --body:'IBM Plex Sans','Noto Sans SC',system-ui,sans-serif;
     --mono:'IBM Plex Mono','Noto Sans SC',ui-monospace,monospace;
@@ -55,6 +57,7 @@
   }
   input[type=number],#no,.i-price,.i-qty{font-family:var(--mono)}
   input:focus,select:focus{outline:2px solid var(--rule);outline-offset:1px;border-color:transparent}
+  .i-price.price-adjusted{border-color:var(--ok);color:var(--ok);background:var(--ok-bg);font-weight:500}
   textarea{
     font-family:var(--mono);font-size:13px;color:var(--ink);
     background:#fff;border:1px solid var(--line);border-radius:0;
@@ -148,6 +151,19 @@
       <div class="actions">
         <button class="btn" id="addRow">+ 再加一行</button>
       </div>
+    </div>
+
+    <div class="panel">
+      <h2>二次核算 · 最终价格核对</h2>
+      <div class="f">
+        <label for="finalizeText">粘贴最终价格清单</label>
+        <textarea id="finalizeText" rows="4" placeholder="下单时间跨度长、商品价格可能中途打折又恢复，等骏河屋出最终结算价后&#10;粘贴「品名␉最终单价」到这里，按品名自动匹配上面的商品明细&#10;价格有变动的行会更新为最终价并标绿"></textarea>
+        <span class="hint">按品名精确匹配，价格和早间录入不一样的会标绿提醒</span>
+      </div>
+      <div class="actions">
+        <button class="btn btn-solid" id="finalizeBtn">核对最终价格</button>
+      </div>
+      <p class="hint" id="finalizeNote" style="margin-top:10px;min-height:1.6em"></p>
     </div>
 
     <div class="panel">
@@ -264,11 +280,16 @@
   }
 
   function readItems(){
-    return [...rowsEl.children].map(r => ({
-      name: r.querySelector('.i-name').value.trim(),
-      price: +r.querySelector('.i-price').value || 0,
-      qty: Math.max(1, Math.round(+r.querySelector('.i-qty').value || 1))
-    })).filter(i => i.price > 0 || i.name);
+    return [...rowsEl.children].map(r => {
+      const price = +r.querySelector('.i-price').value || 0;
+      const origPrice = r.dataset.origPrice != null ? +r.dataset.origPrice : null;
+      const adjusted = origPrice != null && Math.abs(origPrice - price) > 0.001;
+      return {
+        name: r.querySelector('.i-name').value.trim(),
+        price, qty: Math.max(1, Math.round(+r.querySelector('.i-qty').value || 1)),
+        adjusted, origPrice
+      };
+    }).filter(i => i.price > 0 || i.name);
   }
 
   /* ---------- 表格导入 ---------- */
@@ -477,6 +498,69 @@
     noteEl.textContent = msg.join('，') + '。';
   });
 
+  /* ---------- 二次核算：按品名核对最终价格 ---------- */
+  const normName = s => (s || '').trim().replace(/\s+/g, ' ');
+
+  function parseFinalList(text){
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!lines.length) return [];
+    const header = detectHeader(splitCells(lines[0]));
+    const dataLines = header ? lines.slice(1) : lines;
+    const out = [];
+    dataLines.forEach(line => {
+      const cells = splitCells(line);
+      if (header){
+        const name = (cells[header.nameCol] || '').trim();
+        const price = parseFloat(cleanNum(cells[header.priceCol] || ''));
+        if (name && price > 0 && !TOTAL_RE.test(name)) out.push({ name, price });
+        return;
+      }
+      const hit = parseCells(cells);
+      if (hit) out.push({ name: hit.name, price: hit.price });
+    });
+    return out;
+  }
+
+  $('finalizeBtn').addEventListener('click', () => {
+    const finalNote = $('finalizeNote');
+    const list = parseFinalList($('finalizeText').value);
+    if (!list.length){
+      finalNote.textContent = '没识别到「品名+最终单价」，检查一下格式。';
+      return;
+    }
+
+    let matched = 0, changed = 0;
+    const unmatched = [];
+    list.forEach(fin => {
+      const rows = [...rowsEl.children].filter(r => normName(r.querySelector('.i-name').value) === normName(fin.name));
+      if (!rows.length){ unmatched.push(fin.name); return; }
+      rows.forEach(r => {
+        matched++;
+        const priceInput = r.querySelector('.i-price');
+        const cur = +priceInput.value || 0;
+        if (r.dataset.origPrice == null) r.dataset.origPrice = cur;
+        if (Math.abs(fin.price - cur) > 0.001){
+          priceInput.value = fin.price;
+          changed++;
+        }
+        if (Math.abs(fin.price - (+r.dataset.origPrice)) > 0.001){
+          priceInput.classList.add('price-adjusted');
+          priceInput.title = '早间录入 ' + fmtJ(+r.dataset.origPrice) + ' → 最终 ' + fmtJ(fin.price);
+        } else {
+          priceInput.classList.remove('price-adjusted');
+          priceInput.removeAttribute('title');
+        }
+      });
+    });
+
+    render();
+    $('finalizeText').value = '';
+    const msg = ['核对 ' + list.length + ' 条，匹配 ' + matched + ' 件商品'];
+    if (changed) msg.push(changed + ' 件价格有变动（已标绿，将按最终价结算）');
+    if (unmatched.length) msg.push('未匹配到品名：' + unmatched.join('、') + '，请检查品名是否一致');
+    finalNote.textContent = msg.join('，') + '。';
+  });
+
   /* ---------- 计算 ---------- */
   const fmtJ = n => '¥' + Math.round(n).toLocaleString('en-US');
   const fmtC = n => n.toFixed(2) + ' 元';
@@ -568,6 +652,9 @@
       L.push({t:'kv', a:'运费平摊  ' + d.ownQty + ' 件 × ' + fmtJ(d.perUnitShipRaw), b:fmtC(d.shipShareCNY)});
     }
     L.push({t:'formula', v:buildFormula(d)});
+    if (d.items.some(i => i.adjusted)){
+      L.push({t:'centerok', v:'绿色价格为二次核算后的最终成交价'});
+    }
     L.push({t:'rule'});
     L.push({t:'total', a:'应付合计', b:fmtC(d.total)});
     if (Math.abs(d.total - d.rawTotal) > 0.004){
@@ -590,7 +677,7 @@
     return f;
   }
 
-  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, total:38, text:20, center:22, formula:22};
+  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, total:38, text:20, center:22, centerok:20, formula:22};
 
   function drawReceipt(scale){
     const d = compute();
@@ -641,7 +728,7 @@
     // 内容
     const IL = x0 + 22, IR = x1 - 22, IW = IR - IL;
     let y = y0 + 34;
-    const ink = '#12324E', fade = '#5D7B96', acc = '#D8472E', brand = '#1768C9';
+    const ink = '#12324E', fade = '#5D7B96', acc = '#D8472E', brand = '#1768C9', ok = '#1E8A4C';
 
     const right = (txt, yy) => { ctx.textAlign = 'right'; ctx.fillText(txt, IR, yy); ctx.textAlign = 'left'; };
     const clip = (txt, max) => {
@@ -680,12 +767,16 @@
         const it = l.it, dd = l.d;
         ctx.font = '500 13.5px ' + MONO; ctx.fillStyle = ink;
         ctx.fillText(clip(l.n + '. ' + (it.name || '未命名'), IW - 4), IL, y + 15);
-        ctx.font = '400 12px ' + MONO; ctx.fillStyle = fade;
+        ctx.font = '400 12px ' + MONO; ctx.fillStyle = it.adjusted ? ok : fade;
         let sub = '   ' + fmtJ(it.price) + ' × ' + it.qty;
         if (dd.zhe < 10) sub += '  折后 ' + fmtJ(it.netJ);
+        if (it.adjusted) sub += '  已核价';
         ctx.fillText(sub, IL, y + 33);
-        ctx.font = '500 14px ' + DIGIT; ctx.fillStyle = ink;
+        ctx.font = '500 14px ' + DIGIT; ctx.fillStyle = it.adjusted ? ok : ink;
         right(fmtC(it.cny), y + 33);
+      } else if (l.t === 'centerok'){
+        ctx.font = '500 11.5px ' + MONO; ctx.fillStyle = ok;
+        ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 14); ctx.textAlign = 'left';
       } else if (l.t === 'total'){
         ctx.font = '700 15px ' + MONO; ctx.fillStyle = ink;
         ctx.fillText(l.a, IL, y + 22);
