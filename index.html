@@ -67,13 +67,13 @@
   .hint{font-size:11.5px;color:var(--ink-2);margin-top:-2px}
 
   .rows{display:flex;flex-direction:column;gap:10px}
-  .row{display:grid;grid-template-columns:minmax(0,1fr) 108px 62px 32px;gap:8px;align-items:end}
+  .row{display:grid;grid-template-columns:84px minmax(0,1fr) 108px 62px 32px;gap:8px;align-items:end}
   .row .rm{
     background:#fff;border:1px solid var(--line);color:var(--ink-2);
     border-radius:0;height:38px;cursor:pointer;font-size:16px;padding:0;
   }
   .row .rm:hover{color:var(--lead);border-color:var(--lead)}
-  .row-head{display:grid;grid-template-columns:minmax(0,1fr) 108px 62px 32px;gap:8px;font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--ink-2);margin-bottom:2px}
+  .row-head{display:grid;grid-template-columns:84px minmax(0,1fr) 108px 62px 32px;gap:8px;font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--ink-2);margin-bottom:2px}
 
   .seg{display:flex;border:1px solid var(--line)}
   .seg button{
@@ -109,7 +109,7 @@
   @media (max-width:920px){
     .wrap{grid-template-columns:1fr;gap:28px}
     .preview{position:static}
-    .row,.row-head{grid-template-columns:minmax(0,1fr) 92px 54px 32px}
+    .row,.row-head{grid-template-columns:64px minmax(0,1fr) 92px 54px 32px}
   }
   @media (max-width:480px){
     .grid3{grid-template-columns:1fr}
@@ -130,7 +130,7 @@
       <h2>从表格导入</h2>
       <div class="f">
         <label for="importText">粘贴表格内容</label>
-        <textarea id="importText" rows="4" placeholder="从 Excel / WPS 复制品名和单价，粘贴到这里&#10;支持「品名␉单价」或「品名␉单价␉数量」，用 Tab / 逗号 / 两个以上空格分列&#10;单独一行写「客户：昵称」会自动填到下面的客户"></textarea>
+        <textarea id="importText" rows="4" placeholder="从 Excel / WPS 复制品名和单价，粘贴到这里&#10;支持「品名␉单价」或「品名␉单价␉数量」，用 Tab / 逗号 / 两个以上空格分列&#10;带表头且有「编号」列时会一并记下，方便后面二次核算按编号匹配&#10;单独一行写「客户：昵称」会自动填到下面的客户"></textarea>
         <span class="hint">按 Tab、逗号或多个空格分列都能识别</span>
       </div>
       <div class="actions">
@@ -146,7 +146,7 @@
 
     <div class="panel">
       <h2>商品明细</h2>
-      <div class="row-head"><span>品名</span><span>日元单价</span><span>数量</span><span></span></div>
+      <div class="row-head"><span>编号</span><span>品名</span><span>日元单价</span><span>数量</span><span></span></div>
       <div class="rows" id="rows"></div>
       <div class="actions">
         <button class="btn" id="addRow">+ 再加一行</button>
@@ -157,8 +157,8 @@
       <h2>二次核算 · 最终价格核对</h2>
       <div class="f">
         <label for="finalizeText">粘贴最终价格清单</label>
-        <textarea id="finalizeText" rows="4" placeholder="下单时间跨度长、商品价格可能中途打折又恢复，等骏河屋出最终结算价后&#10;粘贴「品名␉最终单价」到这里，按品名自动匹配上面的商品明细&#10;价格有变动的行会更新为最终价并标绿"></textarea>
-        <span class="hint">按品名精确匹配，价格和早间录入不一样的会标绿提醒</span>
+        <textarea id="finalizeText" rows="4" placeholder="下单时间跨度长、商品价格可能中途打折又恢复，等骏河屋出最终结算价后&#10;粘贴「编号␉品名␉最终单价」（表头写清楚列名）到这里&#10;有编号的按编号匹配，没编号的按品名匹配，价格有变动的行会更新为最终价并标绿"></textarea>
+        <span class="hint">带编号列时优先按编号精确匹配，没有编号才退回按品名匹配</span>
       </div>
       <div class="actions">
         <button class="btn btn-solid" id="finalizeBtn">核对最终价格</button>
@@ -262,14 +262,16 @@
   });
 
   /* ---------- 表单 ---------- */
-  function addRow(name='', price='', qty=1){
+  function addRow(name='', price='', qty=1, no=''){
     const d = document.createElement('div');
     d.className = 'row';
     d.innerHTML =
+      '<div class="f"><input type="text" class="i-no" placeholder="编号"></div>' +
       '<div class="f"><input type="text" class="i-name" placeholder="商品名"></div>' +
       '<div class="f"><input type="number" class="i-price" min="0" step="1" placeholder="0"></div>' +
       '<div class="f"><input type="number" class="i-qty" min="1" step="1" value="1"></div>' +
       '<button class="rm" title="删除这行">×</button>';
+    d.querySelector('.i-no').value = no;
     d.querySelector('.i-name').value = name;
     d.querySelector('.i-price').value = price;
     d.querySelector('.i-qty').value = qty;
@@ -285,6 +287,7 @@
       const origPrice = r.dataset.origPrice != null ? +r.dataset.origPrice : null;
       const adjusted = origPrice != null && Math.abs(origPrice - price) > 0.001;
       return {
+        no: r.querySelector('.i-no').value.trim(),
         name: r.querySelector('.i-name').value.trim(),
         price, qty: Math.max(1, Math.round(+r.querySelector('.i-qty').value || 1)),
         adjusted, origPrice
@@ -304,13 +307,14 @@
   const H_PRICE_RE = /(价格|单价|价)/;
   const H_QTY_RE = /^(数量|件数|个数|qty)$/i;
   const H_CUST_RE = /^(客户|买家|收件人|昵称|cn|customer)$/i;
+  const H_NO_RE = /^(编号|货号|番号|商品编号|管理番号|型号|sku|no\.?|item ?no\.?)$/i;
 
-  // 识别第一行是不是表头（含"名称/价格/数量/客户"这类关键词），是的话记下
+  // 识别第一行是不是表头（含"名称/价格/数量/客户/编号"这类关键词），是的话记下
   // 每个字段在哪一列——两个价格列（原价+实际价格）时优先用"实际/到手"这个，
-  // 不再瞎猜"第二个数字是数量"。
+  // 不再瞎猜"第二个数字是数量"。有编号列的话记下来，二次核算时优先按编号匹配。
   function detectHeader(cells){
     const trimmed = cells.map(c => (c || '').trim());
-    let nameCol = -1, priceCol = -1, priceStrictCol = -1, qtyCol = -1, custCol = -1;
+    let nameCol = -1, priceCol = -1, priceStrictCol = -1, qtyCol = -1, custCol = -1, noCol = -1;
     trimmed.forEach((c, i) => {
       if (!c) return;
       if (nameCol === -1 && H_NAME_RE.test(c)) nameCol = i;
@@ -318,10 +322,11 @@
       else if (H_PRICE_RE.test(c)) priceCol = i;
       if (H_QTY_RE.test(c)) qtyCol = i;
       if (H_CUST_RE.test(c)) custCol = i;
+      if (H_NO_RE.test(c)) noCol = i;
     });
     const finalPriceCol = priceStrictCol !== -1 ? priceStrictCol : priceCol;
     if (nameCol === -1 || finalPriceCol === -1) return null;
-    return { nameCol, priceCol: finalPriceCol, qtyCol, custCol };
+    return { nameCol, priceCol: finalPriceCol, qtyCol, custCol, noCol };
   }
 
   function splitCells(line){
@@ -382,8 +387,9 @@
         const qty = header.qtyCol !== -1
           ? Math.max(1, Math.round(parseFloat(cleanNum(cells[header.qtyCol] || ''))) || 1) : 1;
         const tag = header.custCol !== -1 ? (cells[header.custCol] || '').trim() : '';
+        const no = header.noCol !== -1 ? (cells[header.noCol] || '').trim() : '';
         if (name && price > 0 && !TOTAL_RE.test(name)){
-          items.push({ name, price, qty, tag });
+          items.push({ name, price, qty, tag, no });
           if (tag) custTags.add(tag);
           return;
         }
@@ -447,7 +453,7 @@
     const its = batchGroups.get(tag);
     if (!its) return;
     rowsEl.innerHTML = '';
-    its.forEach(it => addRow(it.name, it.price, it.qty));
+    its.forEach(it => addRow(it.name, it.price, it.qty, it.no));
     $('cust').value = tag === UNTAGGED ? '' : tag;
     $('batchQty').value = batchQtyTotal;
     activeBatchTag = tag;
@@ -485,7 +491,7 @@
       const allEmpty = [...rowsEl.children].every(r =>
         !r.querySelector('.i-name').value.trim() && !r.querySelector('.i-price').value.trim());
       if (allEmpty) rowsEl.innerHTML = '';
-      items.forEach(it => addRow(it.name, it.price, it.qty));
+      items.forEach(it => addRow(it.name, it.price, it.qty, it.no));
     }
     if (cust) $('cust').value = cust;
     $('importText').value = '';
@@ -512,11 +518,12 @@
       if (header){
         const name = (cells[header.nameCol] || '').trim();
         const price = parseFloat(cleanNum(cells[header.priceCol] || ''));
-        if (name && price > 0 && !TOTAL_RE.test(name)) out.push({ name, price });
+        const no = header.noCol !== -1 ? (cells[header.noCol] || '').trim() : '';
+        if (name && price > 0 && !TOTAL_RE.test(name)) out.push({ name, price, no });
         return;
       }
       const hit = parseCells(cells);
-      if (hit) out.push({ name: hit.name, price: hit.price });
+      if (hit) out.push({ name: hit.name, price: hit.price, no: '' });
     });
     return out;
   }
@@ -529,13 +536,26 @@
       return;
     }
 
-    let matched = 0, changed = 0;
+    let matched = 0, changed = 0, byNo = 0;
     const unmatched = [];
     list.forEach(fin => {
-      const rows = [...rowsEl.children].filter(r => normName(r.querySelector('.i-name').value) === normName(fin.name));
-      if (!rows.length){ unmatched.push(fin.name); return; }
+      let rows = [];
+      let no = false;
+      if (fin.no){
+        rows = [...rowsEl.children].filter(r => r.querySelector('.i-no').value.trim() === fin.no);
+        no = rows.length > 0;
+      }
+      if (!rows.length){
+        rows = [...rowsEl.children].filter(r => normName(r.querySelector('.i-name').value) === normName(fin.name));
+      }
+      if (!rows.length){ unmatched.push(fin.no ? (fin.no + ' ' + fin.name) : fin.name); return; }
+      if (no) byNo += rows.length;
       rows.forEach(r => {
         matched++;
+        if (fin.no){
+          const noInput = r.querySelector('.i-no');
+          if (!noInput.value.trim()) noInput.value = fin.no;
+        }
         const priceInput = r.querySelector('.i-price');
         const cur = +priceInput.value || 0;
         if (r.dataset.origPrice == null) r.dataset.origPrice = cur;
@@ -556,8 +576,9 @@
     render();
     $('finalizeText').value = '';
     const msg = ['核对 ' + list.length + ' 条，匹配 ' + matched + ' 件商品'];
+    if (byNo) msg.push('其中 ' + byNo + ' 件按编号匹配');
     if (changed) msg.push(changed + ' 件价格有变动（已标绿，将按最终价结算）');
-    if (unmatched.length) msg.push('未匹配到品名：' + unmatched.join('、') + '，请检查品名是否一致');
+    if (unmatched.length) msg.push('未匹配到：' + unmatched.join('、') + '，请检查编号/品名是否一致');
     finalNote.textContent = msg.join('，') + '。';
   });
 
