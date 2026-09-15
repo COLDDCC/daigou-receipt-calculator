@@ -302,19 +302,24 @@
   const cleanNum = s => String(s).trim().replace(/^[×x*]\s*/i, '').replace(/[¥￥,，\s]/g, '');
   const isNumericCell = c => { const n = cleanNum(c); return n !== '' && /^\d+(\.\d+)?$/.test(n); };
 
-  const H_NAME_RE = /^(名称|品名|商品名?|标题|name|item)$/i;
+  // 日文汉字跟对应的中文简体字形很像，但是不同的 Unicode 字符（単≠单、価≠价、額≠额），
+  // 骏河屋结算单表头是日文（品番/商品タイトル/単価/数量/金額），下面的规则中日文写法都要认。
+  const H_NAME_RE = /^(名称|品名|商品名?|标题|name|item|商品タイトル|タイトル)$/i;
   const H_PRICE_STRICT_RE = /(实际价格|到手价|成交价|实付|现价)/;
-  const H_PRICE_RE = /(价格|单价|价)/;
+  const H_PRICE_RE = /(价格|单价|价|単価|価格)/;
   const H_QTY_RE = /^(数量|件数|个数|qty)$/i;
   const H_CUST_RE = /^(客户|买家|收件人|昵称|cn|customer)$/i;
-  const H_NO_RE = /^(编号|货号|番号|商品编号|管理番号|型号|sku|no\.?|item ?no\.?)$/i;
+  const H_NO_RE = /^(编号|货号|番号|商品编号|管理番号|型号|sku|no\.?|item ?no\.?|品番)$/i;
+  const H_AMOUNT_RE = /^(金额|金額|合计金额|合計金額)$/;
 
-  // 识别第一行是不是表头（含"名称/价格/数量/客户/编号"这类关键词），是的话记下
-  // 每个字段在哪一列——两个价格列（原价+实际价格）时优先用"实际/到手"这个，
+  // 识别第一行是不是表头（含"名称/价格/数量/客户/编号"这类关键词，中日文写法都认），
+  // 是的话记下每个字段在哪一列——两个价格列（原价+实际价格）时优先用"实际/到手"这个，
   // 不再瞎猜"第二个数字是数量"。有编号列的话记下来，二次核算时优先按编号匹配。
+  // 有「金额/金額」列（骏河屋结算单会把该行折扣额已经扣掉算进金額）时，优先用
+  // 金額÷数量 当作这行的实际单价，比单价列更准。
   function detectHeader(cells){
     const trimmed = cells.map(c => (c || '').trim());
-    let nameCol = -1, priceCol = -1, priceStrictCol = -1, qtyCol = -1, custCol = -1, noCol = -1;
+    let nameCol = -1, priceCol = -1, priceStrictCol = -1, qtyCol = -1, custCol = -1, noCol = -1, amtCol = -1;
     trimmed.forEach((c, i) => {
       if (!c) return;
       if (nameCol === -1 && H_NAME_RE.test(c)) nameCol = i;
@@ -323,10 +328,22 @@
       if (H_QTY_RE.test(c)) qtyCol = i;
       if (H_CUST_RE.test(c)) custCol = i;
       if (H_NO_RE.test(c)) noCol = i;
+      if (H_AMOUNT_RE.test(c)) amtCol = i;
     });
     const finalPriceCol = priceStrictCol !== -1 ? priceStrictCol : priceCol;
-    if (nameCol === -1 || finalPriceCol === -1) return null;
-    return { nameCol, priceCol: finalPriceCol, qtyCol, custCol, noCol };
+    if (nameCol === -1 || (finalPriceCol === -1 && amtCol === -1)) return null;
+    return { nameCol, priceCol: finalPriceCol, qtyCol, custCol, noCol, amtCol };
+  }
+
+  // 表头行里认出来的单价：有金額列且有数量列时用 金額÷数量（已经扣完这行自己的
+  // 値引額折扣，比単価列更准），否则退回単価/价格列本身。
+  function headerPrice(cells, header){
+    if (header.amtCol !== -1){
+      const amt = parseFloat(cleanNum(cells[header.amtCol] || ''));
+      const qty = header.qtyCol !== -1 ? parseFloat(cleanNum(cells[header.qtyCol] || '')) : 1;
+      if (!isNaN(amt) && qty > 0) return amt / qty;
+    }
+    return header.priceCol !== -1 ? parseFloat(cleanNum(cells[header.priceCol] || '')) : NaN;
   }
 
   function splitCells(line){
@@ -383,7 +400,7 @@
 
       if (header){
         const name = (cells[header.nameCol] || '').trim();
-        const price = parseFloat(cleanNum(cells[header.priceCol] || ''));
+        const price = headerPrice(cells, header);
         const qty = header.qtyCol !== -1
           ? Math.max(1, Math.round(parseFloat(cleanNum(cells[header.qtyCol] || ''))) || 1) : 1;
         const tag = header.custCol !== -1 ? (cells[header.custCol] || '').trim() : '';
@@ -517,7 +534,7 @@
       const cells = splitCells(line);
       if (header){
         const name = (cells[header.nameCol] || '').trim();
-        const price = parseFloat(cleanNum(cells[header.priceCol] || ''));
+        const price = headerPrice(cells, header);
         const no = header.noCol !== -1 ? (cells[header.noCol] || '').trim() : '';
         if (name && price > 0 && !TOTAL_RE.test(name)) out.push({ name, price, no });
         return;
