@@ -67,13 +67,15 @@
   .hint{font-size:11.5px;color:var(--ink-2);margin-top:-2px}
 
   .rows{display:flex;flex-direction:column;gap:10px}
-  .row{display:grid;grid-template-columns:84px minmax(0,1fr) 108px 62px 32px;gap:8px;align-items:end}
+  .row{display:grid;grid-template-columns:84px minmax(0,1fr) 108px 62px 40px 32px;gap:8px;align-items:end}
   .row .rm{
     background:#fff;border:1px solid var(--line);color:var(--ink-2);
     border-radius:0;height:38px;cursor:pointer;font-size:16px;padding:0;
   }
   .row .rm:hover{color:var(--lead);border-color:var(--lead)}
-  .row-head{display:grid;grid-template-columns:84px minmax(0,1fr) 108px 62px 32px;gap:8px;font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--ink-2);margin-bottom:2px}
+  .row-head{display:grid;grid-template-columns:84px minmax(0,1fr) 108px 62px 40px 32px;gap:8px;font:500 10px/1 var(--mono);letter-spacing:.1em;color:var(--ink-2);margin-bottom:2px}
+  .row .nd{display:flex;align-items:center;justify-content:center;height:38px;border:1px solid var(--line)}
+  .row .nd input{width:16px;height:16px;margin:0;cursor:pointer;accent-color:var(--lead)}
 
   .seg{display:flex;border:1px solid var(--line)}
   .seg button{
@@ -109,7 +111,7 @@
   @media (max-width:920px){
     .wrap{grid-template-columns:1fr;gap:28px}
     .preview{position:static}
-    .row,.row-head{grid-template-columns:64px minmax(0,1fr) 92px 54px 32px}
+    .row,.row-head{grid-template-columns:56px minmax(0,1fr) 84px 46px 36px 32px}
   }
   @media (max-width:480px){
     .grid3{grid-template-columns:1fr}
@@ -146,7 +148,7 @@
 
     <div class="panel">
       <h2>商品明细</h2>
-      <div class="row-head"><span>编号</span><span>品名</span><span>日元单价</span><span>数量</span><span></span></div>
+      <div class="row-head"><span>编号</span><span>品名</span><span>日元单价</span><span>数量</span><span title="这件不参与「费用设置」里的整单折扣，按原价结算">不打折</span><span></span></div>
       <div class="rows" id="rows"></div>
       <div class="actions">
         <button class="btn" id="addRow">+ 再加一行</button>
@@ -262,7 +264,7 @@
   });
 
   /* ---------- 表单 ---------- */
-  function addRow(name='', price='', qty=1, no=''){
+  function addRow(name='', price='', qty=1, no='', noDiscount=false){
     const d = document.createElement('div');
     d.className = 'row';
     d.innerHTML =
@@ -270,11 +272,13 @@
       '<div class="f"><input type="text" class="i-name" placeholder="商品名"></div>' +
       '<div class="f"><input type="number" class="i-price" min="0" step="1" placeholder="0"></div>' +
       '<div class="f"><input type="number" class="i-qty" min="1" step="1" value="1"></div>' +
+      '<div class="nd"><input type="checkbox" class="i-nodiscount" title="这件不参与整单折扣，按原价结算"></div>' +
       '<button class="rm" title="删除这行">×</button>';
     d.querySelector('.i-no').value = no;
     d.querySelector('.i-name').value = name;
     d.querySelector('.i-price').value = price;
     d.querySelector('.i-qty').value = qty;
+    d.querySelector('.i-nodiscount').checked = !!noDiscount;
     d.querySelector('.rm').addEventListener('click', () => {
       if (rowsEl.children.length > 1) { d.remove(); render(); }
     });
@@ -290,6 +294,7 @@
         no: r.querySelector('.i-no').value.trim(),
         name: r.querySelector('.i-name').value.trim(),
         price, qty: Math.max(1, Math.round(+r.querySelector('.i-qty').value || 1)),
+        noDiscount: r.querySelector('.i-nodiscount').checked,
         adjusted, origPrice
       };
     }).filter(i => i.price > 0 || i.name);
@@ -625,7 +630,6 @@
     const batchQty = batchProvided ? batchQtyInput : ownQty;
 
     const grossJ = items.reduce((s,i) => s + i.price * i.qty, 0);
-    const netJ = grossJ * k;
     const feeCNY = feeCur === 'CNY' ? feeTotal : feeTotal * rate;
     const shipCNY = shipTotal * rate;
     const perUnitFeeCNY = batchQty ? feeCNY / batchQty : 0;
@@ -633,10 +637,14 @@
     const perUnitShipCNY = batchQty ? shipCNY / batchQty : 0;
     const perUnitShipRaw = batchQty ? shipTotal / batchQty : 0;
 
+    // 有些商品因为特殊原因不参与整单折扣，按原价结算——所以折后金额要逐行算，
+    // 不能整单 grossJ × k 一次算完，否则会把免折的商品也顺带打了折。
     const lines = items.map(i => {
-      const nj = i.price * i.qty * k;
+      const nj = i.noDiscount ? i.price * i.qty : i.price * i.qty * k;
       return { ...i, netJ: nj, cny: nj * rate + (perUnitFeeCNY + perUnitShipCNY) * i.qty };
     });
+    const netJ = lines.reduce((s,l) => s + l.netJ, 0);
+    const exemptQty = lines.filter(l => l.noDiscount).reduce((s,l) => s + l.qty, 0);
 
     const feeShareCNY = perUnitFeeCNY * ownQty;
     const shipShareCNY = perUnitShipCNY * ownQty;
@@ -645,7 +653,7 @@
 
     return { items: lines, zhe, k, rate, feeTotal, feeCur, feeCNY, shipTotal, shipCNY,
              perUnitFeeCNY, perUnitFeeRaw, perUnitShipCNY, perUnitShipRaw, feeShareCNY, shipShareCNY,
-             ownQty, batchQty, batchProvided, grossJ, netJ, rawTotal, total, mode };
+             ownQty, batchQty, batchProvided, grossJ, netJ, exemptQty, rawTotal, total, mode };
   }
 
   /* ---------- 小票绘制 ---------- */
@@ -678,7 +686,8 @@
     L.push({t:'rule'});
     L.push({t:'kv', a:'商品原价', b:fmtJ(d.grossJ)});
     if (d.zhe < 10){
-      L.push({t:'kv', a:'折扣  ' + d.zhe + ' 折', b:'-' + fmtJ(d.grossJ - d.netJ)});
+      const exemptNote = d.exemptQty ? '（' + d.exemptQty + ' 件不参与，原价结算）' : '';
+      L.push({t:'kv', a:'折扣  ' + d.zhe + ' 折' + exemptNote, b:'-' + fmtJ(d.grossJ - d.netJ)});
       L.push({t:'kv', a:'折后金额', b:fmtJ(d.netJ)});
     }
     L.push({t:'kv', a:'汇率  1 日元 = ' + d.rate + ' 元', b:fmtC(d.netJ * d.rate)});
@@ -693,6 +702,9 @@
     if (d.items.some(i => i.adjusted)){
       L.push({t:'centerok', v:'绿色价格为二次核算后的最终成交价'});
     }
+    if (d.exemptQty){
+      L.push({t:'center', v:'标「原价」的商品不参与本单折扣'});
+    }
     L.push({t:'rule'});
     L.push({t:'total', a:'应付合计', b:fmtC(d.total)});
     if (Math.abs(d.total - d.rawTotal) > 0.004){
@@ -706,8 +718,10 @@
 
   function buildFormula(d){
     const jpy = n => Math.round(n).toLocaleString('en-US');
-    let f = jpy(d.grossJ);
-    if (d.zhe < 10) f += ' × ' + d.k.toFixed(2);
+    // 有商品不参与折扣时，grossJ × k 这套公式对不上折后金额了（免折的那部分没打折），
+    // 这时候公式直接从已经逐行算好的折后金额（netJ）起步，不再展示整单折扣倍率。
+    let f = d.exemptQty ? jpy(d.netJ) : jpy(d.grossJ);
+    if (!d.exemptQty && d.zhe < 10) f += ' × ' + d.k.toFixed(2);
     f += ' × ' + d.rate;
     const extra = d.feeShareCNY + d.shipShareCNY;
     if (extra > 0.0001) f = '(' + f + ') + ' + extra.toFixed(2);
@@ -807,7 +821,8 @@
         ctx.fillText(clip(l.n + '. ' + (it.name || '未命名'), IW - 4), IL, y + 15);
         ctx.font = '400 12px ' + MONO; ctx.fillStyle = it.adjusted ? ok : fade;
         let sub = '   ' + fmtJ(it.price) + ' × ' + it.qty;
-        if (dd.zhe < 10) sub += '  折后 ' + fmtJ(it.netJ);
+        if (it.noDiscount) sub += '  原价不打折';
+        else if (dd.zhe < 10) sub += '  折后 ' + fmtJ(it.netJ);
         if (it.adjusted) sub += '  已核价';
         ctx.fillText(sub, IL, y + 33);
         ctx.font = '500 14px ' + DIGIT; ctx.fillStyle = it.adjusted ? ok : ink;
