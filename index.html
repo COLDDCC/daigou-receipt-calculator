@@ -304,18 +304,18 @@
   const CUST_RE = /^(客户|买家|收件人|昵称)[:：]\s*(.+)$/;
   const URL_RE = /^https?:\/\//i;
   const TOTAL_RE = /^(合计|总计|小计|共计|total|subtotal)/i;
-  const cleanNum = s => String(s).trim().replace(/^[×x*]\s*/i, '').replace(/[¥￥,，\s]/g, '');
+  const cleanNum = s => String(s).trim().replace(/^[×x*]\s*/i, '').replace(/[¥￥$,，\s]/g, '');
   const isNumericCell = c => { const n = cleanNum(c); return n !== '' && /^\d+(\.\d+)?$/.test(n); };
 
   // 日文汉字跟对应的中文简体字形很像，但是不同的 Unicode 字符（単≠单、価≠价、額≠额），
   // 骏河屋结算单表头是日文（品番/商品タイトル/単価/数量/金額），下面的规则中日文写法都要认。
-  const H_NAME_RE = /^(名称|品名|商品名?|标题|name|item|商品タイトル|タイトル)$/i;
-  const H_PRICE_STRICT_RE = /(实际价格|到手价|成交价|实付|现价)/;
-  const H_PRICE_RE = /(价格|单价|价|単価|価格)/;
-  const H_QTY_RE = /^(数量|件数|个数|qty)$/i;
-  const H_CUST_RE = /^(客户|买家|收件人|昵称|cn|customer)$/i;
-  const H_NO_RE = /^(编号|货号|番号|商品编号|管理番号|型号|sku|no\.?|item ?no\.?|品番)$/i;
-  const H_AMOUNT_RE = /^(金额|金額|合计金额|合計金額)$/;
+  const H_NAME_RE = /^(名称|品名|商品名?|标题|name|item|item ?name|product|product ?name|title|description|商品タイトル|タイトル)$/i;
+  const H_PRICE_STRICT_RE = /(实际价格|到手价|成交价|实付|现价|actual price|final price|settled price)/i;
+  const H_PRICE_RE = /(价格|单价|价|単価|価格|price)/i;
+  const H_QTY_RE = /^(数量|件数|个数|qty|quantity)$/i;
+  const H_CUST_RE = /^(客户|买家|收件人|昵称|cn|customer|buyer|client)$/i;
+  const H_NO_RE = /^(编号|货号|番号|商品编号|管理番号|型号|sku|no\.?|item ?no\.?|品番|code|item ?code|product ?code|number)$/i;
+  const H_AMOUNT_RE = /^(金额|金額|合计金额|合計金額|amount|total|subtotal|line ?total)$/i;
 
   // 识别第一行是不是表头（含"名称/价格/数量/客户/编号"这类关键词，中日文写法都认），
   // 是的话记下每个字段在哪一列——两个价格列（原价+实际价格）时优先用"实际/到手"这个，
