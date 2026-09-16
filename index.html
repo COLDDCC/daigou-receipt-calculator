@@ -606,6 +606,12 @@
 
   /* ---------- 计算 ---------- */
   const fmtJ = n => '¥' + Math.round(n).toLocaleString('en-US');
+  // 分摊到每件的日元金额（如通讯费/运费平摊）往往不是整数，取整会把 ¥0.2 显示成 ¥0，
+  // 跟旁边真实收取的分摊总额对不上，容易让客户觉得算错了——所以这里保留到分。
+  const fmtJRaw = n => {
+    const r = Math.round(n * 100) / 100;
+    return '¥' + (Number.isInteger(r) ? r.toLocaleString('en-US') : r.toFixed(2));
+  };
   const fmtC = n => n.toFixed(2) + ' 元';
 
   function roundUp(n, mode){
@@ -692,11 +698,11 @@
     }
     L.push({t:'kv', a:'汇率  1 日元 = ' + d.rate + ' 元', b:fmtC(d.netJ * d.rate)});
     if (d.feeTotal > 0){
-      const per = d.feeCur === 'CNY' ? fmtC(d.perUnitFeeCNY) : fmtJ(d.perUnitFeeRaw);
+      const per = d.feeCur === 'CNY' ? fmtC(d.perUnitFeeCNY) : fmtJRaw(d.perUnitFeeRaw);
       L.push({t:'kv', a:'通讯费平摊  ' + d.ownQty + ' 件 × ' + per, b:fmtC(d.feeShareCNY)});
     }
     if (d.shipTotal > 0){
-      L.push({t:'kv', a:'运费平摊  ' + d.ownQty + ' 件 × ' + fmtJ(d.perUnitShipRaw), b:fmtC(d.shipShareCNY)});
+      L.push({t:'kv', a:'运费平摊  ' + d.ownQty + ' 件 × ' + fmtJRaw(d.perUnitShipRaw), b:fmtC(d.shipShareCNY)});
     }
     L.push({t:'formula', v:buildFormula(d)});
     if (d.items.some(i => i.adjusted)){
