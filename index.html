@@ -58,6 +58,8 @@
   input[type=number],#no,.i-price,.i-qty{font-family:var(--mono)}
   input:focus,select:focus{outline:2px solid var(--rule);outline-offset:1px;border-color:transparent}
   .i-price.price-adjusted{border-color:var(--ok);color:var(--ok);background:var(--ok-bg);font-weight:500}
+  .row.row-missing{opacity:.7}
+  .row.row-missing .i-name,.row.row-missing .i-price{text-decoration:line-through;color:var(--ink-2);background:#F4F7FA}
   textarea{
     font-family:var(--mono);font-size:13px;color:var(--ink);
     background:#fff;border:1px solid var(--line);border-radius:0;
@@ -131,8 +133,8 @@
     <div class="panel">
       <h2>从表格导入</h2>
       <div class="f">
-        <label for="importText">粘贴表格内容</label>
-        <textarea id="importText" rows="4" placeholder="从 Excel / WPS 复制品名和单价，粘贴到这里&#10;支持「品名␉单价」或「品名␉单价␉数量」，用 Tab / 逗号 / 两个以上空格分列&#10;带表头且有「编号」列时会一并记下，方便后面二次核算按编号匹配&#10;单独一行写「客户：昵称」会自动填到下面的客户"></textarea>
+        <label for="importText">粘贴登记表内容</label>
+        <textarea id="importText" rows="4" placeholder="从 Excel / WPS 复制品名和单价，粘贴到这里&#10;支持「品名␉单价」或「品名␉单价␉数量」，用 Tab / 逗号 / 两个以上空格分列&#10;带表头且有「编号」列或商品链接时会记下品番，方便后面按结算表核对&#10;单独一行写「客户：昵称」会自动填到下面的客户"></textarea>
         <span class="hint">按 Tab、逗号或多个空格分列都能识别</span>
       </div>
       <div class="actions">
@@ -142,7 +144,7 @@
 
     <div class="panel" id="batchPanel" hidden>
       <h2>本批客户</h2>
-      <p class="hint" style="margin-bottom:10px">本批共 <b id="batchTotalQty">0</b> 点，点客户名切到 TA 的商品和总点数，生成完点「下载小票」再切下一个</p>
+      <p class="hint" style="margin-bottom:10px">本批实际买到 <b id="batchTotalQty">0</b> 点，点客户名切到 TA 的商品和总点数，生成完点「下载小票」再切下一个</p>
       <div class="actions" id="batchChips" style="margin-top:0"></div>
     </div>
 
@@ -158,9 +160,9 @@
     <div class="panel">
       <h2>二次核算 · 最终价格核对</h2>
       <div class="f">
-        <label for="finalizeText">粘贴最终价格清单</label>
-        <textarea id="finalizeText" rows="4" placeholder="下单时间跨度长、商品价格可能中途打折又恢复，等骏河屋出最终结算价后&#10;粘贴「编号␉品名␉最终单价」（表头写清楚列名）到这里&#10;有编号的按编号匹配，没编号的按品名匹配，价格有变动的行会更新为最终价并标绿"></textarea>
-        <span class="hint">带编号列时优先按编号精确匹配，没有编号才退回按品名匹配</span>
+        <label for="finalizeText">粘贴骏河屋结算表</label>
+        <textarea id="finalizeText" rows="4" placeholder="等骏河屋出最终结算单后，连表头一起粘过来（品番␉商品タイトル␉単価␉数量␉金額）&#10;金额一律以「金額」列为准：骏河屋已经把该行折扣扣掉、并且进位到整数日元&#10;登记表里有、结算表里没有的商品 = 没买到，会标成「未购入」，不计钱也不计点数"></textarea>
+        <span class="hint">优先按品番匹配（登记表里的商品链接末段也算品番），对不上才退回按品名匹配</span>
       </div>
       <div class="actions">
         <button class="btn btn-solid" id="finalizeBtn">核对最终价格</button>
@@ -194,8 +196,8 @@
       <div class="grid2" style="margin-top:14px">
         <div class="f">
           <label for="fee">通讯费总额</label>
-          <input id="fee" type="number" step="0.01" min="0" value="240">
-          <span class="hint">按总点数平摊</span>
+          <input id="fee" type="number" step="0.01" min="0" value="0">
+          <span class="hint">按总点数平摊，每批单独填，不会留到下一批</span>
         </div>
         <div class="f">
           <label>通讯费币种</label>
@@ -209,7 +211,7 @@
         <div class="f">
           <label for="ship">运费总额</label>
           <input id="ship" type="number" step="0.01" min="0" value="0">
-          <span class="hint">日元，按总点数平摊</span>
+          <span class="hint">日元，按总点数平摊，每批单独填</span>
         </div>
         <div class="f">
           <label for="batchQty">本次总点数</label>
@@ -264,7 +266,11 @@
   });
 
   /* ---------- 表单 ---------- */
-  function addRow(name='', price='', qty=1, no='', noDiscount=false){
+  // 一行 = 登记表里的一条「谁要了哪本」。跟结算表核对过之后，这行还会挂上核对结果：
+  //   settled  = 结算表里买到了，settleAmt = 结算表「金額」列，骏河屋实际扣的整数日元
+  //   missing  = 结算表里根本没有这件，也就是没买到：金额、件数、总点数一律不算它
+  function addRow(it){
+    it = it || {};
     const d = document.createElement('div');
     d.className = 'row';
     d.innerHTML =
@@ -274,31 +280,53 @@
       '<div class="f"><input type="number" class="i-qty" min="1" step="1" value="1"></div>' +
       '<div class="nd"><input type="checkbox" class="i-nodiscount" title="这件不参与整单折扣，按原价结算"></div>' +
       '<button class="rm" title="删除这行">×</button>';
-    d.querySelector('.i-no').value = no;
-    d.querySelector('.i-name').value = name;
-    d.querySelector('.i-price').value = price;
-    d.querySelector('.i-qty').value = qty;
-    d.querySelector('.i-nodiscount').checked = !!noDiscount;
+    d.querySelector('.i-no').value = it.no || '';
+    d.querySelector('.i-name').value = it.name || '';
+    d.querySelector('.i-price').value = it.price != null ? it.price : '';
+    d.querySelector('.i-qty').value = it.qty != null ? it.qty : 1;
+    d.querySelector('.i-nodiscount').checked = !!it.noDiscount;
+    if (it.origPrice != null) d.dataset.origPrice = it.origPrice;
+    if (it.settled && it.settleAmt != null){ d.dataset.settled = '1'; d.dataset.settleAmt = it.settleAmt; }
+    if (it.missing) d.dataset.missing = '1';
+    markRow(d);
     d.querySelector('.rm').addEventListener('click', () => {
       if (rowsEl.children.length > 1) { d.remove(); render(); }
     });
     rowsEl.appendChild(d);
+    return d;
+  }
+
+  // 未购入的行在表单里划掉，免得对着屏幕核对时以为它还算钱
+  function markRow(r){
+    const miss = r.dataset.missing === '1';
+    r.classList.toggle('row-missing', miss);
+    r.querySelector('.i-name').title = miss
+      ? '结算表里没有这件（没买到），不计金额、不计件数、不计总点数；要彻底去掉就删这行'
+      : '';
+  }
+
+  function renderRows(items){
+    rowsEl.innerHTML = '';
+    (items.length ? items : [{}]).forEach(it => addRow(it));
   }
 
   function readItems(){
-    return [...rowsEl.children].map(r => {
-      const price = +r.querySelector('.i-price').value || 0;
-      const origPrice = r.dataset.origPrice != null ? +r.dataset.origPrice : null;
-      const adjusted = origPrice != null && Math.abs(origPrice - price) > 0.001;
-      return {
-        no: r.querySelector('.i-no').value.trim(),
-        name: r.querySelector('.i-name').value.trim(),
-        price, qty: Math.max(1, Math.round(+r.querySelector('.i-qty').value || 1)),
-        noDiscount: r.querySelector('.i-nodiscount').checked,
-        adjusted, origPrice
-      };
-    }).filter(i => i.price > 0 || i.name);
+    return [...rowsEl.children].map(r => ({
+      el: r,
+      no: r.querySelector('.i-no').value.trim(),
+      name: r.querySelector('.i-name').value.trim(),
+      price: +r.querySelector('.i-price').value || 0,
+      qty: Math.max(1, Math.round(+r.querySelector('.i-qty').value || 1)),
+      noDiscount: r.querySelector('.i-nodiscount').checked,
+      origPrice: r.dataset.origPrice != null ? +r.dataset.origPrice : null,
+      settled: r.dataset.settled === '1',
+      settleAmt: r.dataset.settleAmt != null ? +r.dataset.settleAmt : null,
+      missing: r.dataset.missing === '1'
+    })).filter(i => i.price > 0 || i.name);
   }
+
+  // 存回批次数据时要把 DOM 引用摘掉，不然换客户之后指向的还是上一批已经被扔掉的节点
+  const stripEl = it => { const { el, ...rest } = it; return rest; };
 
   /* ---------- 表格导入 ---------- */
   const CUST_RE = /^(客户|买家|收件人|昵称)[:：]\s*(.+)$/;
@@ -316,6 +344,22 @@
   const H_CUST_RE = /^(客户|买家|收件人|昵称|cn|customer|buyer|client)$/i;
   const H_NO_RE = /^(编号|货号|番号|商品编号|管理番号|型号|sku|no\.?|item ?no\.?|品番|code|item ?code|product ?code|number)$/i;
   const H_AMOUNT_RE = /^(金额|金額|合计金额|合計金額|amount|total|subtotal|line ?total)$/i;
+  // 结算表的「枝番」被 Excel 当成日期，1-1 会变成「1月1日」——这一列没有任何用处，
+  // 明确忽略掉，绝不拿它当品番/品名，也不靠它排序（下面的匹配全部按品番来）。
+  const H_IGNORE_RE = /^(枝番|備考|备考|备注|注釈|remark|note|memo|状態|状态)$/i;
+
+  // 登记表里常常不写编号，只贴商品链接，品番就是链接的最后一段：
+  // https://www.suruga-ya.jp/product/detail/185185606 → 185185606
+  function noFromUrl(cell){
+    const v = String(cell || '').trim();
+    if (!URL_RE.test(v)) return '';
+    const seg = v.split(/[?#]/)[0].replace(/\/+$/, '').split('/').pop() || '';
+    return /^[A-Za-z0-9_-]{4,}$/.test(seg) ? seg : '';
+  }
+  const noFromCells = cells => {
+    for (const c of cells){ const n = noFromUrl(c); if (n) return n; }
+    return '';
+  };
 
   // 识别第一行是不是表头（含"名称/价格/数量/客户/编号"这类关键词，中日文写法都认），
   // 是的话记下每个字段在哪一列——两个价格列（原价+实际价格）时优先用"实际/到手"这个，
@@ -326,7 +370,7 @@
     const trimmed = cells.map(c => (c || '').trim());
     let nameCol = -1, priceCol = -1, priceStrictCol = -1, qtyCol = -1, custCol = -1, noCol = -1, amtCol = -1;
     trimmed.forEach((c, i) => {
-      if (!c) return;
+      if (!c || H_IGNORE_RE.test(c)) return;
       if (nameCol === -1 && H_NAME_RE.test(c)) nameCol = i;
       if (H_PRICE_STRICT_RE.test(c)) priceStrictCol = i;
       else if (H_PRICE_RE.test(c)) priceCol = i;
@@ -340,22 +384,32 @@
     return { nameCol, priceCol: finalPriceCol, qtyCol, custCol, noCol, amtCol };
   }
 
-  // 表头行里认出来的单价：有金額列且有数量列时用 金額÷数量（已经扣完这行自己的
-  // 値引額折扣，比単価列更准），否则退回単価/价格列本身。
-  function headerPrice(cells, header){
-    if (header.amtCol !== -1){
-      const amt = parseFloat(cleanNum(cells[header.amtCol] || ''));
-      const qty = header.qtyCol !== -1 ? parseFloat(cleanNum(cells[header.qtyCol] || '')) : 1;
-      if (!isNaN(amt) && qty > 0) return amt / qty;
-    }
-    return header.priceCol !== -1 ? parseFloat(cleanNum(cells[header.priceCol] || '')) : NaN;
+  // 把一行数据按表头读成 {品番, 品名, 单价, 数量, 金额}。
+  // 金额一律优先用「金額」列：骏河屋结算单在这一列里已经把该行的値引額扣掉、
+  // 并且进位到了整数日元，是真正扣款的数；只有単価列时才用 単価 × 数量 反推。
+  function headerRow(cells, header){
+    const name = (cells[header.nameCol] || '').trim();
+    const qtyRaw = header.qtyCol !== -1 ? parseFloat(cleanNum(cells[header.qtyCol] || '')) : NaN;
+    const qty = Math.max(1, Math.round(qtyRaw) || 1);
+    let amount = header.amtCol !== -1 ? parseFloat(cleanNum(cells[header.amtCol] || '')) : NaN;
+    let price = header.priceCol !== -1 ? parseFloat(cleanNum(cells[header.priceCol] || '')) : NaN;
+    if (!(amount > 0) && price > 0) amount = price * qty;
+    if (!(price > 0) && amount > 0) price = amount / qty;
+    if (!name || !(amount > 0) || TOTAL_RE.test(name)) return null;
+    let no = header.noCol !== -1 ? (cells[header.noCol] || '').trim() : '';
+    if (!no) no = noFromCells(cells);
+    return { name, price, qty, amount, no };
   }
 
+  // 只裁行尾空白：行首那个 Tab 是「第一列是空的」（结算表某行没填品番就长这样），
+  // 整行 trim 掉会让后面每一列都往左错一位，整行读出来全是错的。
+  // 按空格分列时行首空白不算列，那一档才允许整行 trim。
   function splitCells(line){
-    let cells = line.split('\t').map(s => s.trim());
-    if (cells.length < 2) cells = line.split(',').map(s => s.trim());
-    if (cells.length < 2) cells = line.split(/\s+/).map(s => s.trim());
-    return cells;
+    const row = String(line).replace(/\s+$/, '');
+    let cells = row.split('\t');
+    if (cells.length < 2) cells = row.split(',');
+    if (cells.length < 2) cells = row.trim().split(/\s+/);
+    return cells.map(s => s.trim());
   }
 
   // 从分好列的单元格里找品名/单价/数量：从左往右找第一个数字列当单价（自动跳过
@@ -382,11 +436,11 @@
       .filter(c => c && !URL_RE.test(c) && !isNumericCell(c))
       .join(' ').trim();
     if (!name || TOTAL_RE.test(name)) return null;
-    return { name, price, qty };
+    return { name, price, qty, amount: price * qty, no: noFromCells(trimmed) };
   }
 
   function parseImport(text){
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (!lines.length) return { items: [], cust: null, skipped: 0, custNote: '' };
 
     const items = [];
@@ -397,21 +451,18 @@
     const header = detectHeader(splitCells(lines[0]));
     const dataLines = header ? lines.slice(1) : lines;
 
-    dataLines.forEach((line, idx) => {
+    dataLines.forEach((rawLine, idx) => {
+      const line = rawLine.trim();
       const m = line.match(CUST_RE);
       if (m){ cust = m[2].trim(); return; }
 
-      const cells = splitCells(line);
+      const cells = splitCells(rawLine);
 
       if (header){
-        const name = (cells[header.nameCol] || '').trim();
-        const price = headerPrice(cells, header);
-        const qty = header.qtyCol !== -1
-          ? Math.max(1, Math.round(parseFloat(cleanNum(cells[header.qtyCol] || ''))) || 1) : 1;
-        const tag = header.custCol !== -1 ? (cells[header.custCol] || '').trim() : '';
-        const no = header.noCol !== -1 ? (cells[header.noCol] || '').trim() : '';
-        if (name && price > 0 && !TOTAL_RE.test(name)){
-          items.push({ name, price, qty, tag, no });
+        const hit = headerRow(cells, header);
+        if (hit && hit.price > 0){
+          const tag = header.custCol !== -1 ? (cells[header.custCol] || '').trim() : '';
+          items.push({ name: hit.name, price: hit.price, qty: hit.qty, no: hit.no, tag });
           if (tag) custTags.add(tag);
           return;
         }
@@ -455,17 +506,36 @@
     return groups;
   }
 
+  const boughtQty = its => its.filter(i => !i.missing).reduce((s, i) => s + i.qty, 0);
+  const missedQty = its => its.filter(i => i.missing).reduce((s, i) => s + i.qty, 0);
+
+  // 本次总点数 = 全批「结算表里真买到」的件数。核对完结算表后未购入的那些必须掉出去，
+  // 否则所有按总点数平摊的费用分母都是错的。
+  function recalcBatchTotal(){
+    if (!batchGroups) return;
+    batchQtyTotal = [...batchGroups.values()].reduce((s, its) => s + boughtQty(its), 0);
+    $('batchTotalQty').textContent = batchQtyTotal;
+  }
+
+  // 切客户前先把当前这位在表单里的改动写回批次数据，不然一切走就丢了
+  function syncActiveGroup(){
+    if (batchGroups && activeBatchTag && batchGroups.has(activeBatchTag)){
+      batchGroups.set(activeBatchTag, readItems().map(stripEl));
+    }
+  }
+
   function renderBatchChips(){
     const box = $('batchChips');
     box.innerHTML = '';
     if (!batchGroups) return;
     [...batchGroups.entries()].forEach(([tag, its]) => {
-      const qty = its.reduce((s, i) => s + i.qty, 0);
+      const qty = boughtQty(its), miss = missedQty(its);
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'chip' + (batchDone.has(tag) ? ' done' : '');
       b.setAttribute('aria-pressed', tag === activeBatchTag ? 'true' : 'false');
-      b.textContent = tag + '（' + qty + '件）' + (batchDone.has(tag) ? ' ✓' : '');
+      b.textContent = tag + '（' + qty + '件' + (miss ? '，未购入 ' + miss : '') + '）' +
+        (batchDone.has(tag) ? ' ✓' : '');
       b.addEventListener('click', () => loadBatchGroup(tag));
       box.appendChild(b);
     });
@@ -474,8 +544,9 @@
   function loadBatchGroup(tag){
     const its = batchGroups.get(tag);
     if (!its) return;
-    rowsEl.innerHTML = '';
-    its.forEach(it => addRow(it.name, it.price, it.qty, it.no));
+    if (activeBatchTag !== tag) syncActiveGroup();
+    recalcBatchTotal();
+    renderRows(batchGroups.get(tag));
     $('cust').value = tag === UNTAGGED ? '' : tag;
     $('batchQty').value = batchQtyTotal;
     activeBatchTag = tag;
@@ -493,10 +564,9 @@
     const distinctTags = new Set(items.map(it => it.tag).filter(Boolean));
     if (distinctTags.size > 1){
       batchGroups = buildBatchGroups(items);
-      batchQtyTotal = items.reduce((s, i) => s + i.qty, 0);
       batchDone.clear();
       activeBatchTag = null;
-      $('batchTotalQty').textContent = batchQtyTotal;
+      recalcBatchTotal();
       $('batchPanel').hidden = false;
       renderBatchChips();
       const [firstTag] = batchGroups.keys();
@@ -513,7 +583,7 @@
       const allEmpty = [...rowsEl.children].every(r =>
         !r.querySelector('.i-name').value.trim() && !r.querySelector('.i-price').value.trim());
       if (allEmpty) rowsEl.innerHTML = '';
-      items.forEach(it => addRow(it.name, it.price, it.qty, it.no));
+      items.forEach(it => addRow(it));
     }
     if (cust) $('cust').value = cust;
     $('importText').value = '';
@@ -526,87 +596,129 @@
     noteEl.textContent = msg.join('，') + '。';
   });
 
-  /* ---------- 二次核算：按品名核对最终价格 ---------- */
+  /* ---------- 二次核算：拿骏河屋结算表核对登记表 ---------- */
   const normName = s => (s || '').trim().replace(/\s+/g, ' ');
+  const noKey = s => String(s || '').trim().toUpperCase().replace(/[\s\-_/]/g, '');
+  const labelOf = it => (it.no ? it.no + ' ' : '') + (it.name || '未命名');
+
+  // 登记表里的品番常常是商品链接末段（185185606），而骏河屋结算表的品番后面还会
+  // 再接一段库存序号（185185606001）。所以短的是长的前缀、且本身够长时算同一件。
+  function noMatch(a, b){
+    a = noKey(a); b = noKey(b);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const short = a.length <= b.length ? a : b;
+    const long = a.length <= b.length ? b : a;
+    return short.length >= 6 && long.indexOf(short) === 0;
+  }
 
   function parseFinalList(text){
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
     if (!lines.length) return [];
     const header = detectHeader(splitCells(lines[0]));
     const dataLines = header ? lines.slice(1) : lines;
     const out = [];
     dataLines.forEach(line => {
       const cells = splitCells(line);
-      if (header){
-        const name = (cells[header.nameCol] || '').trim();
-        const price = headerPrice(cells, header);
-        const no = header.noCol !== -1 ? (cells[header.noCol] || '').trim() : '';
-        if (name && price > 0 && !TOTAL_RE.test(name)) out.push({ name, price, no });
-        return;
-      }
-      const hit = parseCells(cells);
-      if (hit) out.push({ name: hit.name, price: hit.price, no: '' });
+      const hit = header ? headerRow(cells, header) : parseCells(cells);
+      if (hit && hit.amount > 0) out.push({ no: hit.no || '', name: hit.name, qty: hit.qty, amount: hit.amount });
     });
     return out;
+  }
+
+  // 结算表的每一行是一个「名额」，被登记表的某一行吃掉之后就不能再被别人吃。
+  // 同一个品番在结算表里出现两行（同一本要了 2 本）时，两行会一起算给那一行登记，
+  // 而不是重复拿同一行去顶两次。
+  function matchAgainst(pool, it){
+    const want = Math.max(1, it.qty | 0);
+    const hits = [];
+    let got = 0;
+    const take = test => {
+      for (const c of pool){
+        if (got >= want) break;
+        if (c.used || !test(c)) continue;
+        c.used = true; hits.push(c); got += c.qty;
+      }
+    };
+    if (it.no) take(c => noMatch(c.no, it.no));
+    const byNo = hits.length > 0;
+    if (!hits.length && it.name) take(c => normName(c.name) === normName(it.name));
+
+    if (!hits.length){
+      // 结算表里找不到 = 这件没买到。价格一律不再回退去用登记表原价 × 折扣，
+      // 而是整行标成未购入，后面金额、件数、总点数都绕开它。
+      it.settled = false;
+      it.settleAmt = null;
+      it.missing = true;
+      return null;
+    }
+
+    const amount = Math.round(hits.reduce((s, h) => s + h.amount, 0));
+    const qty = hits.reduce((s, h) => s + h.qty, 0);
+    if (it.origPrice == null) it.origPrice = it.price;
+    if (!it.no && hits[0].no) it.no = hits[0].no;
+    it.settled = true;
+    it.missing = false;
+    it.settleAmt = amount;   // 结算表「金額」列，已含折扣、已是整数日元
+    it.qty = qty;            // 以结算表实际买到的本数为准
+    it.price = Math.round(amount / qty);
+    return { qty, byNo };
   }
 
   $('finalizeBtn').addEventListener('click', () => {
     const finalNote = $('finalizeNote');
     const list = parseFinalList($('finalizeText').value);
     if (!list.length){
-      finalNote.textContent = '没识别到「品名+最终单价」，检查一下格式。';
+      finalNote.textContent = '没识别到结算表内容（至少要有品名和金额/单价），检查一下格式。';
       return;
     }
 
-    let matched = 0, changed = 0, byNo = 0;
-    const unmatched = [];
-    list.forEach(fin => {
-      let rows = [];
-      let no = false;
-      if (fin.no){
-        rows = [...rowsEl.children].filter(r => r.querySelector('.i-no').value.trim() === fin.no);
-        no = rows.length > 0;
-      }
-      if (!rows.length){
-        rows = [...rowsEl.children].filter(r => normName(r.querySelector('.i-name').value) === normName(fin.name));
-      }
-      if (!rows.length){ unmatched.push(fin.no ? (fin.no + ' ' + fin.name) : fin.name); return; }
-      if (no) byNo += rows.length;
-      rows.forEach(r => {
-        matched++;
-        if (fin.no){
-          const noInput = r.querySelector('.i-no');
-          if (!noInput.value.trim()) noInput.value = fin.no;
-        }
-        const priceInput = r.querySelector('.i-price');
-        const cur = +priceInput.value || 0;
-        if (r.dataset.origPrice == null) r.dataset.origPrice = cur;
-        if (Math.abs(fin.price - cur) > 0.001){
-          priceInput.value = fin.price;
-          changed++;
-        }
-        if (Math.abs(fin.price - (+r.dataset.origPrice)) > 0.001){
-          priceInput.classList.add('price-adjusted');
-          priceInput.title = '早间录入 ' + fmtJ(+r.dataset.origPrice) + ' → 最终 ' + fmtJ(fin.price);
-        } else {
-          priceInput.classList.remove('price-adjusted');
-          priceInput.removeAttribute('title');
-        }
-      });
+    const pool = list.map(l => ({ ...l, used: false }));
+    const missed = [];
+    let matched = 0, byNo = 0;
+    const apply = its => its.forEach(it => {
+      const hit = matchAgainst(pool, it);
+      if (!hit){ missed.push(it); return; }
+      matched += hit.qty;
+      if (hit.byNo) byNo += hit.qty;
     });
 
+    if (batchGroups){
+      // 整批一起核对：只核当前这位客户的话，「本次总点数」还是登记表的行数，
+      // 所有按点数平摊的费用分母就都是错的。
+      syncActiveGroup();
+      batchGroups.forEach(its => apply(its));
+      recalcBatchTotal();
+      renderBatchChips();
+      if (activeBatchTag) loadBatchGroup(activeBatchTag);
+      else $('batchQty').value = batchQtyTotal;
+    } else {
+      const its = readItems().map(stripEl);
+      apply(its);
+      renderRows(its);
+    }
     render();
     $('finalizeText').value = '';
-    const msg = ['核对 ' + list.length + ' 条，匹配 ' + matched + ' 件商品'];
-    if (byNo) msg.push('其中 ' + byNo + ' 件按编号匹配');
-    if (changed) msg.push(changed + ' 件价格有变动（已标绿，将按最终价结算）');
-    if (unmatched.length) msg.push('未匹配到：' + unmatched.join('、') + '，请检查编号/品名是否一致');
-    finalNote.textContent = msg.join('，') + '。';
+
+    const leftover = pool.filter(p => !p.used);
+    const spent = pool.filter(p => p.used).reduce((s, p) => s + p.amount, 0);
+    const msg = ['结算表 ' + list.length + ' 行，对上 ' + matched + ' 件，合计 ' + fmtJ(spent)];
+    if (byNo) msg.push('其中 ' + byNo + ' 件按品番匹配');
+    if (missed.length) msg.push('未购入 ' + missed.length + ' 件（不计费）：' + missed.map(labelOf).join('、'));
+    if (leftover.length) msg.push('结算表有 ' + leftover.length + ' 行没对上登记表：' + leftover.map(labelOf).join('、'));
+    if (batchGroups) msg.push('本次总点数已改为 ' + batchQtyTotal + ' 点');
+    finalNote.textContent = msg.join('；') + '。';
+
+    console.info('[二次核算] 对上 ' + matched + ' 件，合计 ' + fmtJ(spent) +
+      (batchGroups ? '，本次总点数 ' + batchQtyTotal + ' 点' : ''));
+    if (missed.length) console.warn('[二次核算] 登记表有、结算表没有（按未购入处理，不计费）：', missed.map(labelOf));
+    if (leftover.length) console.warn('[二次核算] 结算表有、登记表没有（没人认领）：', leftover.map(labelOf));
   });
 
   /* ---------- 计算 ---------- */
   const fmtJ = n => '¥' + Math.round(n).toLocaleString('en-US');
   const fmtC = n => n.toFixed(2) + ' 元';
+  const round2 = n => Math.round(n * 100) / 100;
 
   function roundUp(n, mode){
     if (mode === 'jiao') return Math.ceil(n * 10) / 10;
@@ -615,7 +727,7 @@
   }
 
   function compute(){
-    const items = readItems();
+    const all = readItems();
     const zhe = Math.min(10, Math.max(0, +$('discount').value || 10));
     const k = zhe / 10;
     const rate = Math.max(0.0001, +$('rate').value || 0.046);
@@ -624,12 +736,13 @@
     const shipTotal = Math.max(0, +$('ship').value || 0);
     const mode = segValue('roundSeg') || 'none';
 
-    const ownQty = items.reduce((s,i) => s + i.qty, 0);
+    // 结算表里没有的商品 = 没买到。除了在小票上单独列一行交代，件数、金额、
+    // 平摊分母一律不算它。
+    const ownQty = all.filter(i => !i.missing).reduce((s, i) => s + i.qty, 0);
     const batchQtyInput = +$('batchQty').value || 0;
     const batchProvided = batchQtyInput > 0;
     const batchQty = batchProvided ? batchQtyInput : ownQty;
 
-    const grossJ = items.reduce((s,i) => s + i.price * i.qty, 0);
     const feeCNY = feeCur === 'CNY' ? feeTotal : feeTotal * rate;
     const shipCNY = shipTotal * rate;
     const perUnitFeeCNY = batchQty ? feeCNY / batchQty : 0;
@@ -637,23 +750,44 @@
     const perUnitShipCNY = batchQty ? shipCNY / batchQty : 0;
     const perUnitShipRaw = batchQty ? shipTotal / batchQty : 0;
 
-    // 有些商品因为特殊原因不参与整单折扣，按原价结算——所以折后金额要逐行算，
-    // 不能整单 grossJ × k 一次算完，否则会把免折的商品也顺带打了折。
-    const lines = items.map(i => {
-      const nj = i.noDiscount ? i.price * i.qty : i.price * i.qty * k;
-      return { ...i, netJ: nj, cny: nj * rate + (perUnitFeeCNY + perUnitShipCNY) * i.qty };
+    // 逐行算日元。核过价的行直接用结算表「金額」列——骏河屋是逐本扣整数日元的，
+    // 该行的折扣它自己已经算进去了（有的商品压根不打折），拿登记原价再乘一次折扣
+    // 只会算错。没核过价的行才用 原价 × 折扣，同样进位到整数日元，
+    // 这样小票上写的 ¥488 和实际用来换人民币的就是同一个数，不会差那五毛。
+    const lines = all.map(i => {
+      const base = i.origPrice != null ? i.origPrice : i.price;
+      const grossJ = base * i.qty;
+      const rawExpect = (i.noDiscount ? base : base * k) * i.qty;
+      const expectJ = Math.ceil(rawExpect);
+      const netJ = i.missing ? 0 : (i.settled ? i.settleAmt : expectJ);
+      // 结算价和「原价 × 折扣」对不上（中途涨回原价、或这件本来就不打折）才标绿。
+      // 骏河屋每本怎么进位我们并不知道（¥487.5 收 488、¥470.25 收 470），
+      // 所以留每件 1 日元的容差，别把进位差当成价格变动，弄得满屏都是绿的。
+      const adjusted = !!i.settled && Math.abs(i.settleAmt - rawExpect) > i.qty;
+      const cny = i.missing ? 0 : round2(netJ * rate + (perUnitFeeCNY + perUnitShipCNY) * i.qty);
+      return { ...i, grossJ, netJ, expectJ, adjusted, cny };
     });
-    const netJ = lines.reduce((s,l) => s + l.netJ, 0);
-    const exemptQty = lines.filter(l => l.noDiscount).reduce((s,l) => s + l.qty, 0);
 
-    const feeShareCNY = perUnitFeeCNY * ownQty;
-    const shipShareCNY = perUnitShipCNY * ownQty;
-    const rawTotal = netJ * rate + feeShareCNY + shipShareCNY;
+    const items = lines.filter(l => !l.missing);
+    const missingItems = lines.filter(l => l.missing);
+    const grossJ = items.reduce((s, l) => s + l.grossJ, 0);
+    const netJ = items.reduce((s, l) => s + l.netJ, 0);
+    const exemptQty = items.filter(l => l.noDiscount && !l.settled).reduce((s, l) => s + l.qty, 0);
+    const settledQty = items.filter(l => l.settled).reduce((s, l) => s + l.qty, 0);
+    const missingQty = missingItems.reduce((s, l) => s + l.qty, 0);
+
+    // 平摊出来的钱先落到分再进合计：小票上写多少就加多少。
+    // 以前这里留着没取整的小数，通讯费小到显示成 ¥0 时，合计里还是会莫名多出几分钱。
+    const feeShareCNY = round2(perUnitFeeCNY * ownQty);
+    const shipShareCNY = round2(perUnitShipCNY * ownQty);
+    const goodsCNY = round2(netJ * rate);
+    const rawTotal = round2(goodsCNY + feeShareCNY + shipShareCNY);
     const total = roundUp(rawTotal, mode);
 
-    return { items: lines, zhe, k, rate, feeTotal, feeCur, feeCNY, shipTotal, shipCNY,
+    return { items, missingItems, allItems: lines, zhe, k, rate, feeTotal, feeCur, feeCNY, shipTotal, shipCNY,
              perUnitFeeCNY, perUnitFeeRaw, perUnitShipCNY, perUnitShipRaw, feeShareCNY, shipShareCNY,
-             ownQty, batchQty, batchProvided, grossJ, netJ, exemptQty, rawTotal, total, mode };
+             ownQty, batchQty, batchProvided, grossJ, netJ, goodsCNY,
+             exemptQty, settledQty, missingQty, rawTotal, total, mode };
   }
 
   /* ---------- 小票绘制 ---------- */
@@ -683,24 +817,41 @@
         L.push({t:'item', n:n+1, it, d});
       });
     }
+
+    // 没买到的单独列出来交代一句，不计进任何金额，方便直接截图跟客户说明
+    if (d.missingItems.length){
+      L.push({t:'rule'});
+      L.push({t:'text', v:'未购入 ' + d.missingQty + ' 件 · 结算表里没有，不计费'});
+      d.missingItems.forEach(it => L.push({t:'miss', it}));
+    }
+
     L.push({t:'rule'});
     L.push({t:'kv', a:'商品原价', b:fmtJ(d.grossJ)});
-    if (d.zhe < 10){
-      const exemptNote = d.exemptQty ? '（' + d.exemptQty + ' 件不参与，原价结算）' : '';
-      L.push({t:'kv', a:'折扣  ' + d.zhe + ' 折' + exemptNote, b:'-' + fmtJ(d.grossJ - d.netJ)});
-      L.push({t:'kv', a:'折后金额', b:fmtJ(d.netJ)});
+    const cut = d.grossJ - d.netJ;
+    if (Math.abs(cut) > 0.5){
+      const notes = [];
+      if (d.settledQty) notes.push('以结算价为准');
+      if (d.exemptQty) notes.push(d.exemptQty + ' 件原价结算');
+      const head = d.settledQty ? '优惠合计' : '折扣  ' + d.zhe + ' 折';
+      L.push({t:'kv', a:head + (notes.length ? '（' + notes.join('，') + '）' : ''),
+              b:(cut >= 0 ? '-' : '+') + fmtJ(Math.abs(cut))});
+      L.push({t:'kv', a:d.settledQty ? '结算金额' : '折后金额', b:fmtJ(d.netJ)});
     }
-    L.push({t:'kv', a:'汇率  1 日元 = ' + d.rate + ' 元', b:fmtC(d.netJ * d.rate)});
-    if (d.feeTotal > 0){
-      const per = d.feeCur === 'CNY' ? fmtC(d.perUnitFeeCNY) : fmtJ(d.perUnitFeeRaw);
-      L.push({t:'kv', a:'通讯费平摊  ' + d.ownQty + ' 件 × ' + per, b:fmtC(d.feeShareCNY)});
-    }
-    if (d.shipTotal > 0){
-      L.push({t:'kv', a:'运费平摊  ' + d.ownQty + ' 件 × ' + fmtJ(d.perUnitShipRaw), b:fmtC(d.shipShareCNY)});
-    }
+    L.push({t:'kv', a:'汇率  1 日元 = ' + d.rate + ' 元', b:fmtC(d.goodsCNY)});
+    // 平摊金额四舍五入到分之后还是 0 的（通讯费为 0、或小到不足半分）就不画这行，
+    // 也不进合计——以前这里按原始总额判断，会出现「× ¥0」却收 0.02 元的怪事。
+    // 写成「总额 ÷ 总点数 × 本人件数」而不是「件数 × 每件单价」：每件摊到的钱常常带
+    // 一长串小数，显示成取整后的单价，客户自己乘一遍对不上，还会以为多收了。
+    const share = (name, totalStr, cny) =>
+      L.push({t:'kv', a:name + '平摊  ' + totalStr + ' ÷ ' + d.batchQty + ' 点 × ' + d.ownQty + ' 件', b:fmtC(cny)});
+    if (d.feeShareCNY > 0) share('通讯费', d.feeCur === 'CNY' ? fmtC(d.feeTotal) : fmtJ(d.feeTotal), d.feeShareCNY);
+    if (d.shipShareCNY > 0) share('运费', fmtJ(d.shipTotal), d.shipShareCNY);
     L.push({t:'formula', v:buildFormula(d)});
     if (d.items.some(i => i.adjusted)){
       L.push({t:'centerok', v:'绿色价格为二次核算后的最终成交价'});
+    }
+    if (d.settledQty){
+      L.push({t:'center', v:'金额以骏河屋结算单实扣日元为准'});
     }
     if (d.exemptQty){
       L.push({t:'center', v:'标「原价」的商品不参与本单折扣'});
@@ -718,18 +869,20 @@
 
   function buildFormula(d){
     const jpy = n => Math.round(n).toLocaleString('en-US');
-    // 有商品不参与折扣时，grossJ × k 这套公式对不上折后金额了（免折的那部分没打折），
-    // 这时候公式直接从已经逐行算好的折后金额（netJ）起步，不再展示整单折扣倍率。
-    let f = d.exemptQty ? jpy(d.netJ) : jpy(d.grossJ);
-    if (!d.exemptQty && d.zhe < 10) f += ' × ' + d.k.toFixed(2);
+    // 核过价、或者有商品不参与折扣时，「原价 × 折扣」这套公式跟实际金额对不上了
+    // （结算价里折扣已经算完，免折的那部分压根没打折），公式直接从逐行算好的
+    // 日元合计起步，不再展示整单折扣倍率。
+    const plain = !d.settledQty && !d.exemptQty;
+    let f = plain ? jpy(d.grossJ) : jpy(d.netJ);
+    if (plain && d.zhe < 10) f += ' × ' + d.k.toFixed(2);
     f += ' × ' + d.rate;
-    const extra = d.feeShareCNY + d.shipShareCNY;
-    if (extra > 0.0001) f = '(' + f + ') + ' + extra.toFixed(2);
+    const extra = round2(d.feeShareCNY + d.shipShareCNY);
+    if (extra > 0) f = '(' + f + ') + ' + extra.toFixed(2);
     f += ' = ' + d.total.toFixed(2) + ' 元';
     return f;
   }
 
-  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, total:38, text:20, center:22, centerok:20, formula:22};
+  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, miss:21, total:38, text:20, center:22, centerok:20, formula:22};
 
   function drawReceipt(scale){
     const d = compute();
@@ -820,13 +973,26 @@
         ctx.font = '500 13.5px ' + MONO; ctx.fillStyle = ink;
         ctx.fillText(clip(l.n + '. ' + (it.name || '未命名'), IW - 4), IL, y + 15);
         ctx.font = '400 12px ' + MONO; ctx.fillStyle = it.adjusted ? ok : fade;
-        let sub = '   ' + fmtJ(it.price) + ' × ' + it.qty;
-        if (it.noDiscount) sub += '  原价不打折';
+        const unit = it.origPrice != null ? it.origPrice : it.price;
+        let sub = '   ' + fmtJ(unit) + ' × ' + it.qty;
+        if (it.settled) sub += '  结算 ' + fmtJ(it.netJ);
+        else if (it.noDiscount) sub += '  原价不打折';
         else if (dd.zhe < 10) sub += '  折后 ' + fmtJ(it.netJ);
         if (it.adjusted) sub += '  已核价';
         ctx.fillText(sub, IL, y + 33);
         ctx.font = '500 14px ' + DIGIT; ctx.fillStyle = it.adjusted ? ok : ink;
         right(fmtC(it.cny), y + 33);
+      } else if (l.t === 'miss'){
+        const it = l.it;
+        ctx.font = '400 12.5px ' + MONO; ctx.fillStyle = fade;
+        const txt = clip(labelOf(it), IW - 62);
+        ctx.fillText(txt, IL, y + 14);
+        ctx.strokeStyle = fade; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(IL, y + 9.5); ctx.lineTo(IL + ctx.measureText(txt).width, y + 9.5);
+        ctx.stroke();
+        ctx.font = '400 11px ' + MONO;
+        right('未购入', y + 14);
       } else if (l.t === 'centerok'){
         ctx.font = '500 11.5px ' + MONO; ctx.fillStyle = ok;
         ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 14); ctx.textAlign = 'left';
@@ -851,9 +1017,26 @@
     return d;
   }
 
+  // 表单里的标绿/划线状态跟着计算结果走：结算价跟「原价 × 折扣」对不上的标绿，
+  // 结算表里没有的整行划掉。
+  function paintRows(d){
+    d.allItems.forEach(it => {
+      if (!it.el || !it.el.isConnected) return;
+      const p = it.el.querySelector('.i-price');
+      p.classList.toggle('price-adjusted', it.adjusted);
+      if (it.adjusted){
+        p.title = '登记原价 ' + fmtJ(it.origPrice) + ' × ' + it.qty +
+                  ' → 结算实扣 ' + fmtJ(it.settleAmt) + '（按折扣本该 ' + fmtJ(it.expectJ) + '）';
+      } else {
+        p.removeAttribute('title');
+      }
+      markRow(it.el);
+    });
+  }
+
   function render(){
     const dpr = Math.min(3, window.devicePixelRatio || 1);
-    drawReceipt(Math.max(2, dpr));
+    paintRows(drawReceipt(Math.max(2, dpr)));
     save();
   }
 
@@ -892,11 +1075,12 @@
 
   /* ---------- 记住设置 ---------- */
   const KEY = 'daigou:settings';
+  // 只记汇率/折扣/尾数这些每批都一样的设置。通讯费和运费是每批现算的金额，
+  // 记住它等于把上一批的数悄悄带到这一批，明明这批没通讯费，合计里却多出几分钱。
   function save(){
     try{
       localStorage.setItem(KEY, JSON.stringify({
         rate: $('rate').value, discount: $('discount').value,
-        fee: $('fee').value, ship: $('ship').value,
         feeCur: segValue('feeCurSeg'), round: segValue('roundSeg')
       }));
     }catch(e){}
@@ -906,14 +1090,14 @@
       const raw = localStorage.getItem(KEY);
       if (!raw) return;
       const s = JSON.parse(raw);
-      ['rate','discount','fee','ship'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
+      ['rate','discount'].forEach(k => { if (s[k] != null) $(k).value = s[k]; });
       if (s.feeCur) setSeg('feeCurSeg', s.feeCur);
       if (s.round) setSeg('roundSeg', s.round);
     }catch(e){}
   }
 
   /* ---------- 启动 ---------- */
-  $('addRow').addEventListener('click', () => { addRow(); render(); });
+  $('addRow').addEventListener('click', () => { addRow({}); render(); });
   document.addEventListener('input', render);
   document.addEventListener('change', render);
   window.addEventListener('resize', () => drawReceipt(Math.max(2, window.devicePixelRatio || 1)));
@@ -923,9 +1107,17 @@
   $('no').value = 'SY' + String(t.getMonth()+1).padStart(2,'0') + String(t.getDate()).padStart(2,'0')
                   + '-' + String(Math.floor(Math.random()*900+100));
 
-  addRow('', '', 1);
+  addRow({});
   load();
   render();
+
+  // 留给控制台核对用：core.compute() 看这一单的明细，core.batch() 看整批谁买到了什么。
+  window.daigou = {
+    compute,
+    batch: () => batchGroups && [...batchGroups.entries()].map(([tag, its]) => ({
+      tag, 件数: boughtQty(its), 未购入: its.filter(i => i.missing).map(labelOf)
+    }))
+  };
 })();
 </script>
 </body>
