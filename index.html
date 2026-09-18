@@ -863,8 +863,22 @@
     }
     L.push({t:'rule'});
     L.push({t:'gap', h:4});
+    L.push({t:'discount', v:discountText(d)});
     L.push({t:'center', v:'共 ' + d.ownQty + ' 件 · 请核对后付款'});
     return L;
+  }
+
+  // 每张小票结尾都写明本单折扣。核过价之后上面那行会变成「优惠合计（以结算价为准）」，
+  // 折扣率反而看不到了，客户最想确认的恰恰是这个数。
+  function discountText(d){
+    if (d.zhe >= 10) return '本次下单折扣：无折扣，按原价结算';
+    const zhe = String(+d.zhe.toFixed(2));
+    // 免折的、以及结算价跟「原价 × 折扣」对不上的（比如中途涨回原价成交），
+    // 都不是按这个折扣算的，件数点出来，免得客户拿折扣率去乘总价对不上。
+    const off = d.items
+      .filter(i => (i.noDiscount && !i.settled) || i.adjusted)
+      .reduce((s, i) => s + i.qty, 0);
+    return '本次下单折扣：' + zhe + ' 折' + (off ? '（其中 ' + off + ' 件按实际结算价）' : '');
   }
 
   function buildFormula(d){
@@ -882,7 +896,7 @@
     return f;
   }
 
-  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, miss:21, total:38, text:20, center:22, centerok:20, formula:22};
+  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, miss:21, total:38, text:20, center:22, centerok:20, discount:23, formula:22};
 
   function drawReceipt(scale){
     const d = compute();
@@ -1004,6 +1018,9 @@
       } else if (l.t === 'text'){
         ctx.font = '400 12px ' + MONO; ctx.fillStyle = fade;
         ctx.fillText(clip(l.v, IW), IL, y + 14);
+      } else if (l.t === 'discount'){
+        ctx.font = '500 12.5px ' + MONO; ctx.fillStyle = ink;
+        ctx.textAlign = 'center'; ctx.fillText(clip(l.v, IW), (IL+IR)/2, y + 15); ctx.textAlign = 'left';
       } else if (l.t === 'center'){
         ctx.font = '400 11.5px ' + MONO; ctx.fillStyle = fade;
         ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 14); ctx.textAlign = 'left';
