@@ -847,9 +847,7 @@
         const r = i.settleAmt / base;
         if (Math.abs(r - norm) <= 0.02) return;
         i.odd = true;
-        i.oddWhy = r >= norm
-          ? (Math.abs(r - 1) <= 0.02 ? '没参与本批折扣' : '折扣比别人少')
-          : '比本批折扣更低';
+        i.oddWhy = Math.abs(r - 1) <= 0.02 ? '不打折' : '折扣不同';
       });
     }
 
@@ -1049,9 +1047,6 @@
     if (d.feeShareCNY > 0) share('通讯费', d.feeCur === 'CNY' ? fmtC(d.feeTotal) : fmtJ(d.feeTotal), d.feeShareCNY);
     if (d.shipShareCNY > 0) share('运费', fmtJ(d.shipTotal), d.shipShareCNY);
     L.push({t:'formula', v:buildFormula(d)});
-    if (d.items.some(i => i.adjusted)){
-      L.push({t:'centerok', v:'绿色那几件的折扣跟本批其他商品不同'});
-    }
     if (d.settledQty){
       L.push({t:'center', v:'金额以骏河屋结算单实扣日元为准'});
     }
@@ -1084,7 +1079,7 @@
     return f;
   }
 
-  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, miss:21, total:38, text:20, center:22, centerok:20, formula:22};
+  const H = {title:34, sub:20, gap:0, rule:16, kv:23, kvs:19, item:40, miss:21, total:38, text:20, center:22, formula:22};
 
   function drawReceipt(scale){
     const d = compute();
@@ -1196,9 +1191,6 @@
         ctx.stroke();
         ctx.font = '400 11px ' + MONO;
         right('未购入', y + 14);
-      } else if (l.t === 'centerok'){
-        ctx.font = '500 11.5px ' + MONO; ctx.fillStyle = ok;
-        ctx.textAlign = 'center'; ctx.fillText(l.v, (IL+IR)/2, y + 14); ctx.textAlign = 'left';
       } else if (l.t === 'total'){
         ctx.font = '700 15px ' + MONO; ctx.fillStyle = ink;
         ctx.fillText(l.a, IL, y + 22);
