@@ -288,6 +288,7 @@
     if (it.origPrice != null) d.dataset.origPrice = it.origPrice;
     if (it.settled && it.settleAmt != null){ d.dataset.settled = '1'; d.dataset.settleAmt = it.settleAmt; }
     if (it.missing) d.dataset.missing = '1';
+    if (it.odd){ d.dataset.odd = '1'; d.dataset.oddWhy = it.oddWhy || ''; }
     markRow(d);
     d.querySelector('.rm').addEventListener('click', () => {
       if (rowsEl.children.length > 1) { d.remove(); render(); }
@@ -321,7 +322,9 @@
       origPrice: r.dataset.origPrice != null ? +r.dataset.origPrice : null,
       settled: r.dataset.settled === '1',
       settleAmt: r.dataset.settleAmt != null ? +r.dataset.settleAmt : null,
-      missing: r.dataset.missing === '1'
+      missing: r.dataset.missing === '1',
+      odd: r.dataset.odd === '1',
+      oddWhy: r.dataset.oddWhy || ''
     })).filter(i => i.price > 0 || i.name);
   }
 
@@ -819,11 +822,45 @@
       }
     });
 
+    // 小票上标绿是给人「这件要看一眼」的信号，所以只能标真正反常的那几件。
+    // 一整批走同一个折扣是常态（登记 ¥350 收 ¥263，全批都这样），把它们全标绿
+    // 等于什么都没标。反常的是折扣比例跟大多数不一样的那几件——最典型的就是
+    // 新品、CD、雑貨这种压根不参与本次折扣的，客户看到会问「为什么这本没便宜」。
+    // 取全批「结算价 ÷ 登记价」的中位数当作这批的常态，偏离超过 2 个百分点才标。
+    // 这里只决定标不标绿，不碰任何金额——钱一律以结算表为准。
+    function markOutliers(all){
+      const settled = all.filter(i => i.settled && !i.missing);
+      settled.forEach(i => { i.odd = false; i.oddWhy = ''; });
+      const ratios = settled
+        .map(i => { const base = (i.origPrice != null ? i.origPrice : i.price) * i.qty;
+                    return base > 0 ? i.settleAmt / base : null; })
+        .filter(r => r != null);
+      if (!ratios.length) return;
+      // 不足 3 件时没有「这批的常态」可言，退回字面意思：结算价跟登记价不一样就标。
+      const sorted = ratios.slice().sort((a, b) => a - b);
+      const norm = ratios.length < 3 ? 1
+        : (sorted.length % 2 ? sorted[(sorted.length - 1) / 2]
+           : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2);
+      settled.forEach(i => {
+        const base = (i.origPrice != null ? i.origPrice : i.price) * i.qty;
+        if (!(base > 0)) return;
+        const r = i.settleAmt / base;
+        if (Math.abs(r - norm) <= 0.02) return;
+        i.odd = true;
+        i.oddWhy = r >= norm
+          ? (Math.abs(r - 1) <= 0.02 ? '没参与本批折扣' : '折扣比别人少')
+          : '比本批折扣更低';
+      });
+    }
+
     if (batchGroups){
       // 整批一起核对：只核当前这位客户的话，「本次总点数」还是登记表的行数，
       // 所有按点数平摊的费用分母就都是错的。
       syncActiveGroup();
       batchGroups.forEach(its => apply(its));
+      const everyone = [];
+      batchGroups.forEach(its => everyone.push(...its));
+      markOutliers(everyone);          // 常态要看整批，不能只看当前这位客户
       recalcBatchTotal();
       renderBatchChips();
       if (activeBatchTag) loadBatchGroup(activeBatchTag);
@@ -831,6 +868,7 @@
     } else {
       const its = readItems().map(stripEl);
       apply(its);
+      markOutliers(its);
       renderRows(its);
     }
     render();
@@ -924,10 +962,10 @@
       const rawExpect = (i.noDiscount ? base : base * k) * i.qty;
       const expectJ = Math.ceil(rawExpect);
       const netJ = i.missing ? 0 : (i.settled ? i.settleAmt : expectJ);
-      // 结算价和「原价 × 折扣」对不上（中途涨回原价、或这件本来就不打折）才标绿。
-      // 骏河屋每本怎么进位我们并不知道（¥487.5 收 488、¥470.25 收 470），
-      // 所以留每件 1 日元的容差，别把进位差当成价格变动，弄得满屏都是绿的。
-      const adjusted = !!i.settled && Math.abs(i.settleAmt - rawExpect) > i.qty;
+      // 标绿 = 这件跟这批其他商品不一样（见二次核算里的 markOutliers）。
+      // 以前是拿「原价 × 折扣」去比，可 B 这套本来就不反推折扣比例，折扣栏永远是 10，
+      // 于是每一件打过折的都被判成"有变动"，满屏绿字，等于什么都没标。
+      const adjusted = !!i.settled && !i.missing && !!i.odd;
       const cny = i.missing ? 0 : round2(netJ * rate + (perUnitFeeCNY + perUnitShipCNY) * i.qty);
       return { ...i, grossJ, netJ, expectJ, adjusted, cny };
     });
@@ -1012,7 +1050,7 @@
     if (d.shipShareCNY > 0) share('运费', fmtJ(d.shipTotal), d.shipShareCNY);
     L.push({t:'formula', v:buildFormula(d)});
     if (d.items.some(i => i.adjusted)){
-      L.push({t:'centerok', v:'绿色价格为二次核算后的最终成交价'});
+      L.push({t:'centerok', v:'绿色那几件的折扣跟本批其他商品不同'});
     }
     if (d.settledQty){
       L.push({t:'center', v:'金额以骏河屋结算单实扣日元为准'});
@@ -1142,7 +1180,8 @@
         if (it.settled) sub += '  结算 ' + fmtJ(it.netJ);
         else if (it.noDiscount) sub += '  原价不打折';
         else if (dd.zhe < 10) sub += '  折后 ' + fmtJ(it.netJ);
-        if (it.adjusted) sub += '  已核价';
+        // 「已核价」不再逐行写：整批都是核过的，逐行写等于没写，末尾一句话交代就够。
+        if (it.adjusted && it.oddWhy) sub += '  ' + it.oddWhy;
         ctx.fillText(sub, IL, y + 33);
         ctx.font = '500 14px ' + DIGIT; ctx.fillStyle = it.adjusted ? ok : ink;
         right(fmtC(it.cny), y + 33);
