@@ -643,6 +643,17 @@
     .trim();
   const coreName = s => normName(stripCat(s));
 
+  // 小票上显示用的品名：削掉骏河屋页面标题两头的商品分类，只留书名本身。
+  // 存在表单里的品名不动——匹配靠的是它。
+  const SURUGA_TITLE_RE = /^駿河屋\s*[-\u2010-\u2015\u2212\u30fc]*\s*[<\uff1c][^>\uff1e]*[>\uff1e]/;
+  const displayName = s => {
+    const raw = String(s || '');
+    if (!SURUGA_TITLE_RE.test(raw)) return stripCat(raw) || raw.trim();
+    return raw.replace(SURUGA_TITLE_RE, '')
+      .replace(/[（(][^（()）]*[）)]\s*$/, '')   // 结尾那段分类：（アニメ系）（クッション・抱き枕・本体）……
+      .trim() || raw.trim();
+  };
+
   // 标题里的数字基本都是卷数/册数（「まとめ本 2」和「まとめ本 3」、「琥珀の島 3」），
   // 这恰恰是相似度最看不出区别、又最不能认错的地方——差一个数字就是另一本书。
   // 所以凡是靠品名近似认人的那两级，两边的数字必须完全一致，否则一律不认。
@@ -669,7 +680,7 @@
   const noKey = s => String(s || '').normalize('NFKC').toUpperCase().replace(/[^0-9A-Z]/g, '');
   // 一律显示削掉分类前缀之后的标题：不然截出来前 24 个字全是
   // 「中古女性向け一般同人誌（BL含む）」，每条长得一模一样，等于没说。
-  const labelOf = it => (it.no ? it.no + ' ' : '') + (brief(stripCat(it.name), 22) || '未命名');
+  const labelOf = it => (it.no ? it.no + ' ' : '') + (brief(displayName(it.name), 22) || '未命名');
 
   // 登记表里的品番常常是商品链接末段（185185606、ZHOTI725238），而骏河屋结算表的
   // 品番后面还会再接 3 位枝番（185185606001，001=中古、000=新品）。所以「短的正好是
@@ -804,7 +815,7 @@
       matched += hit.qty;
       if (hit.byNo) byNo += hit.qty;
       if (hit.how === 'part' || hit.how === 'fuzzy'){
-        fuzzyList.push(brief(stripCat(it.name), 20) + ' → ' + brief(stripCat(hit.first.name), 20));
+        fuzzyList.push(brief(displayName(it.name), 20) + ' → ' + brief(displayName(hit.first.name), 20));
       }
     });
 
@@ -1124,7 +1135,7 @@
       } else if (l.t === 'item'){
         const it = l.it, dd = l.d;
         ctx.font = '500 13.5px ' + MONO; ctx.fillStyle = ink;
-        ctx.fillText(clip(l.n + '. ' + (it.name || '未命名'), IW - 4), IL, y + 15);
+        ctx.fillText(clip(l.n + '. ' + (displayName(it.name) || '未命名'), IW - 4), IL, y + 15);
         ctx.font = '400 12px ' + MONO; ctx.fillStyle = it.adjusted ? ok : fade;
         const unit = it.origPrice != null ? it.origPrice : it.price;
         let sub = '   ' + fmtJ(unit) + ' × ' + it.qty;
