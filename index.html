@@ -232,7 +232,7 @@
 
     <div class="panel">
       <h2>汇总表格 · 粘进 Excel</h2>
-      <p class="hint" style="margin-bottom:10px">每位客户一行：名字、件数、人民币总金额、日元总金额。用 Tab 分列，复制后在表格里直接粘贴就会自动分好格子。</p>
+      <p class="hint" style="margin-bottom:10px">每位客户一行：cn、点数、人民币金额、日元金额、方式。用 Tab 分列，复制后在表格里直接粘贴就会自动分好格子（「方式」留空，粘过去自己填）。</p>
       <div class="f">
         <textarea id="summaryText" rows="6" readonly placeholder="点下面的「生成汇总」"></textarea>
       </div>
@@ -1304,14 +1304,18 @@
     return rows;
   }
 
+  // 「方式」这一列页面上没有对应的数据，留成空格子，粘进表格之后自己填收款方式——
+  // 有这一列在，粘过去就不用再手动插列、把右边已经填好的东西整体挪一格。
+  const SUMMARY_HEAD = ['cn', '点数', '人民币金额', '日元金额', '方式'];
+
   function buildSummaryTSV(rows){
-    const out = [['客户', '件数', '人民币', '日元'].join('\t')];
-    rows.forEach(r => out.push([TSV_SAFE(r.name), r.qty, r.cny.toFixed(2), Math.round(r.jpy)].join('\t')));
+    const out = [SUMMARY_HEAD.join('\t')];
+    rows.forEach(r => out.push([TSV_SAFE(r.name), r.qty, r.cny.toFixed(2), Math.round(r.jpy), ''].join('\t')));
     if (rows.length > 1){
       const qty = rows.reduce((s, r) => s + r.qty, 0);
       const cny = round2(rows.reduce((s, r) => s + r.cny, 0));
       const jpy = rows.reduce((s, r) => s + r.jpy, 0);
-      out.push(['合计', qty, cny.toFixed(2), Math.round(jpy)].join('\t'));
+      out.push(['合计', qty, cny.toFixed(2), Math.round(jpy), ''].join('\t'));
     }
     return out.join('\n');
   }
