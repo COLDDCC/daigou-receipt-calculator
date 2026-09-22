@@ -229,6 +229,19 @@
         <div class="f"><label for="no">单号</label><input id="no" type="text"></div>
       </div>
     </div>
+
+    <div class="panel">
+      <h2>汇总表格 · 粘进 Excel</h2>
+      <p class="hint" style="margin-bottom:10px">每位客户一行：名字、件数、人民币总金额、日元总金额。用 Tab 分列，复制后在表格里直接粘贴就会自动分好格子。</p>
+      <div class="f">
+        <textarea id="summaryText" rows="6" readonly placeholder="点下面的「生成汇总」"></textarea>
+      </div>
+      <div class="actions">
+        <button class="btn btn-solid" id="summaryBtn">生成汇总</button>
+        <button class="btn" id="summaryCopy">复制</button>
+      </div>
+      <p class="hint" id="summaryNote" style="margin-top:10px;min-height:1.6em"></p>
+    </div>
   </div>
 
   <div class="preview">
@@ -926,8 +939,8 @@
     return Math.round(n * 100) / 100;
   }
 
-  function compute(){
-    const all = readItems();
+  function compute(itemsOverride){
+    const all = itemsOverride || readItems();
     const zhe = Math.min(10, Math.max(0, +$('discount').value || 10));
     const k = zhe / 10;
     const rate = Math.max(0.0001, +$('rate').value || 0.046);
@@ -1232,6 +1245,7 @@
   function render(){
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     paintRows(drawReceipt(Math.max(2, dpr)));
+    if ($('summaryText').value.trim()) renderSummary();
     save();
   }
 
@@ -1266,6 +1280,62 @@
       noteEl.textContent = '这个浏览器不支持复制图片，用「下载小票」吧。';
     }
     render();
+  });
+
+  /* ---------- 汇总表格 ---------- */
+  // 小票是一人一张图，对账的时候还得有一份能整批看的东西。这里出一段用 Tab 分列的纯文本，
+  // 粘进 Excel / WPS 会自动落到各自的格子里，不用再一个个手敲。
+  const TSV_SAFE = v => String(v).replace(/[\t\r\n]+/g, ' ').trim();
+
+  function summaryRows(){
+    syncActiveGroup();
+    const rows = [];
+    if (batchGroups && batchGroups.size){
+      [...batchGroups.entries()].forEach(([tag, its]) => {
+        const d = compute(its);
+        rows.push({ name: tag === UNTAGGED ? '未标注' : tag, qty: d.ownQty,
+                    cny: d.total, jpy: d.netJ, missQty: d.missingQty });
+      });
+    } else {
+      const d = compute();
+      rows.push({ name: $('cust').value.trim() || '未填客户', qty: d.ownQty,
+                  cny: d.total, jpy: d.netJ, missQty: d.missingQty });
+    }
+    return rows;
+  }
+
+  function buildSummaryTSV(rows){
+    const out = [['客户', '件数', '人民币', '日元'].join('\t')];
+    rows.forEach(r => out.push([TSV_SAFE(r.name), r.qty, r.cny.toFixed(2), Math.round(r.jpy)].join('\t')));
+    if (rows.length > 1){
+      const qty = rows.reduce((s, r) => s + r.qty, 0);
+      const cny = round2(rows.reduce((s, r) => s + r.cny, 0));
+      const jpy = rows.reduce((s, r) => s + r.jpy, 0);
+      out.push(['合计', qty, cny.toFixed(2), Math.round(jpy)].join('\t'));
+    }
+    return out.join('\n');
+  }
+
+  function renderSummary(){
+    const rows = summaryRows();
+    $('summaryText').value = buildSummaryTSV(rows);
+    const missed = rows.reduce((s, r) => s + r.missQty, 0);
+    $('summaryNote').textContent = rows.length + ' 位客户' +
+      (missed ? '，未购入 ' + missed + ' 件已排除在件数和金额之外' : '') + '。';
+  }
+
+  $('summaryBtn').addEventListener('click', renderSummary);
+
+  $('summaryCopy').addEventListener('click', async () => {
+    if (!$('summaryText').value.trim()) renderSummary();
+    const text = $('summaryText').value;
+    try{
+      await navigator.clipboard.writeText(text);
+      $('summaryNote').textContent = '已复制，到 Excel 里按 Ctrl+V（Mac 是 ⌘V）直接粘贴。';
+    }catch(e){
+      $('summaryText').select();
+      $('summaryNote').textContent = '这个浏览器不给自动复制，已经帮你选中了，按 Ctrl+C 复制。';
+    }
   });
 
   /* ---------- 记住设置 ---------- */
