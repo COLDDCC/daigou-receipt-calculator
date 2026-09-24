@@ -302,6 +302,7 @@
     if (it.settled && it.settleAmt != null){ d.dataset.settled = '1'; d.dataset.settleAmt = it.settleAmt; }
     if (it.missing) d.dataset.missing = '1';
     if (it.odd){ d.dataset.odd = '1'; d.dataset.oddWhy = it.oddWhy || ''; }
+    if (it.batchR != null) d.dataset.batchR = it.batchR;
     markRow(d);
     d.querySelector('.rm').addEventListener('click', () => {
       if (rowsEl.children.length > 1) { d.remove(); render(); }
@@ -337,7 +338,8 @@
       settleAmt: r.dataset.settleAmt != null ? +r.dataset.settleAmt : null,
       missing: r.dataset.missing === '1',
       odd: r.dataset.odd === '1',
-      oddWhy: r.dataset.oddWhy || ''
+      oddWhy: r.dataset.oddWhy || '',
+      batchR: r.dataset.batchR != null ? +r.dataset.batchR : null
     })).filter(i => i.price > 0 || i.name);
   }
 
@@ -843,7 +845,7 @@
     // 这里只决定标不标绿，不碰任何金额——钱一律以结算表为准。
     function markOutliers(all){
       const settled = all.filter(i => i.settled && !i.missing);
-      settled.forEach(i => { i.odd = false; i.oddWhy = ''; });
+      settled.forEach(i => { i.odd = false; i.oddWhy = ''; i.batchR = null; });
       const ratios = settled
         .map(i => { const base = (i.origPrice != null ? i.origPrice : i.price) * i.qty;
                     return base > 0 ? i.settleAmt / base : null; })
@@ -851,9 +853,13 @@
       if (!ratios.length) return;
       // 不足 3 件时没有「这批的常态」可言，退回字面意思：结算价跟登记价不一样就标。
       const sorted = ratios.slice().sort((a, b) => a - b);
-      const norm = ratios.length < 3 ? 1
-        : (sorted.length % 2 ? sorted[(sorted.length - 1) / 2]
-           : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2);
+      const median = sorted.length % 2 ? sorted[(sorted.length - 1) / 2]
+        : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+      const norm = ratios.length < 3 ? 1 : median;
+      // 小票上「本批 9 折」用的就是这个常态比例。不足 3 件时只有大家折扣一致才敢说几折，
+      // 各不相同就不硬凑一个折数，小票退回写「优惠合计」。
+      const batchR = ratios.length >= 3 || sorted[sorted.length - 1] - sorted[0] <= 0.02 ? median : null;
+      settled.forEach(i => { i.batchR = batchR; });
       settled.forEach(i => {
         const base = (i.origPrice != null ? i.origPrice : i.price) * i.qty;
         if (!(base > 0)) return;
@@ -988,6 +994,13 @@
     const exemptQty = items.filter(l => l.noDiscount && !l.settled).reduce((s, l) => s + l.qty, 0);
     const settledQty = items.filter(l => l.settled).reduce((s, l) => s + l.qty, 0);
     const missingQty = missingItems.reduce((s, l) => s + l.qty, 0);
+    // 核过价之后折扣栏不再参与计算，小票上的「几折」改从结算表反推：
+    // 整批「结算价 ÷ 登记价」的常态（见 markOutliers），折数保留一位小数（8.5 折）。
+    // 骏河屋逐件进位到整数日元，9 折常常算出 0.901，四舍五入到一位就是 9。
+    const batchR = (items.find(l => l.settled && l.batchR != null) || {}).batchR;
+    const settleZhe = batchR != null && batchR < 0.98 ? Math.round(batchR * 100) / 10 : null;
+    const oddQty = why => items.filter(l => l.adjusted && l.oddWhy === why).reduce((s, l) => s + l.qty, 0);
+    const fullQty = oddQty('不打折'), diffQty = oddQty('折扣不同');
 
     // 平摊出来的钱先落到分再进合计：小票上写多少就加多少。
     // 以前这里留着没取整的小数，通讯费小到显示成 ¥0 时，合计里还是会莫名多出几分钱。
@@ -1000,7 +1013,7 @@
     return { items, missingItems, allItems: lines, zhe, k, rate, feeTotal, feeCur, feeCNY, shipTotal, shipCNY,
              perUnitFeeCNY, perUnitFeeRaw, perUnitShipCNY, perUnitShipRaw, feeShareCNY, shipShareCNY,
              ownQty, batchQty, batchProvided, grossJ, netJ, goodsCNY,
-             exemptQty, settledQty, missingQty, rawTotal, total, mode };
+             exemptQty, settledQty, missingQty, settleZhe, fullQty, diffQty, rawTotal, total, mode };
   }
 
   /* ---------- 小票绘制 ---------- */
@@ -1043,9 +1056,14 @@
     const cut = d.grossJ - d.netJ;
     if (Math.abs(cut) > 0.5){
       const notes = [];
-      if (d.settledQty) notes.push('以结算价为准');
+      if (d.settledQty && d.settleZhe != null){
+        if (d.fullQty) notes.push(d.fullQty + ' 件不打折');
+        if (d.diffQty) notes.push(d.diffQty + ' 件折扣不同');
+      } else if (d.settledQty) notes.push('以结算价为准');
       if (d.exemptQty) notes.push(d.exemptQty + ' 件原价结算');
-      const head = d.settledQty ? '优惠合计' : '折扣  ' + d.zhe + ' 折';
+      const head = d.settledQty
+        ? (d.settleZhe != null ? '本批 ' + d.settleZhe + ' 折' : '优惠合计')
+        : '折扣  ' + d.zhe + ' 折';
       L.push({t:'kv', a:head + (notes.length ? '（' + notes.join('，') + '）' : ''),
               b:(cut >= 0 ? '-' : '+') + fmtJ(Math.abs(cut))});
       L.push({t:'kv', a:d.settledQty ? '结算金额' : '折后金额', b:fmtJ(d.netJ)});
@@ -1185,7 +1203,8 @@
         ctx.font = '400 12px ' + MONO; ctx.fillStyle = it.adjusted ? ok : fade;
         const unit = it.origPrice != null ? it.origPrice : it.price;
         let sub = '   ' + fmtJ(unit) + ' × ' + it.qty;
-        if (it.settled) sub += '  结算 ' + fmtJ(it.netJ);
+        if (it.settled && !it.adjusted && dd.settleZhe != null) sub += '  ' + dd.settleZhe + '折 ' + fmtJ(it.netJ);
+        else if (it.settled) sub += '  结算 ' + fmtJ(it.netJ);
         else if (it.noDiscount) sub += '  原价不打折';
         else if (dd.zhe < 10) sub += '  折后 ' + fmtJ(it.netJ);
         // 「已核价」不再逐行写：整批都是核过的，逐行写等于没写，末尾一句话交代就够。
